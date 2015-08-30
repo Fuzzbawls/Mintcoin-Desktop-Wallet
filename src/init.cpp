@@ -875,6 +875,9 @@ bool AppInit2()
 
     if (!CheckDiskSpace())
         return false;
+        
+    if(!strErrors.str().empty())
+    	return InitError(strErrors.str());
 
     RandAddSeedPerfmon();
 
@@ -896,10 +899,7 @@ bool AppInit2()
     uiInterface.InitMessage(_("Done loading"));
     printf("Done loading\n");
 
-    if (!strErrors.str().empty())
-        return InitError(strErrors.str());
-
-     // Add wallet transactions that aren't already in a block to mapTransactions
+    // Add wallet transactions that aren't already in a block to mapTransactions
     pwalletMain->ReacceptWalletTransactions();
 
 #if !defined(QT_GUI)
