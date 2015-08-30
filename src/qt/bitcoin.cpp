@@ -218,6 +218,8 @@ int main(int argc, char *argv[])
         if (GUIUtil::GetStartOnSystemStartup())
             GUIUtil::SetStartOnSystemStartup(true);
 
+        boost::thread_group threadGroup;
+        
         BitcoinGUI window;
         guiref = &window;
         if(AppInit2())
@@ -258,10 +260,15 @@ int main(int argc, char *argv[])
                 guiref = 0;
             }
             // Shutdown the core and its threads, but don't exit Bitcoin-Qt here
+            threadGroup.interrupt_all();
+            threadGroup.join_all();
             Shutdown(NULL);
         }
         else
         {
+        	threadGroup.interrupt_all();
+        	threadGroup.join_all();
+        	Shutdown(NULL)
             return 1;
         }
     } catch (std::exception& e) {
