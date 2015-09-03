@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
         {
         	threadGroup.interrupt_all();
         	threadGroup.join_all();
-        	Shutdown(NULL)
+        	Shutdown(NULL);
             return 1;
         }
     } catch (std::exception& e) {
