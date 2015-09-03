@@ -219,6 +219,7 @@ HEADERS += src/qt/bitcoingui.h \
     src/qt/merchantpage.h \
     src/qt/recurringsendentry.h \
     src/qt/recurringsendpage.h \
+    src/qt/splashscreen.h \
     src/qt/repairwalletdialog.h
 
 SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
@@ -290,6 +291,7 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/merchantpage.cpp \
     src/qt/recurringsendpage.cpp \
     src/qt/recurringsendentry.cpp \
+    src/qt/splashscreen.cpp \
     src/qt/repairwalletdialog.cpp
 
 RESOURCES += \
@@ -352,7 +354,7 @@ QMAKE_EXTRA_COMPILERS += TSQM
 
 # "Other files" to show in Qt Creator
 OTHER_FILES += \
-    doc/*.rst doc/*.txt doc/README README.md res/bitcoin-qt.rc src/test/*.cpp src/test/*.h src/qt/test/*.cpp src/qt/test/*.h
+    doc/*.rst doc/*.txt doc/README README.md res/bitcoin-qt.rc src/test/*.cpp src/test/*.h src/qt/test/*.cpp src/qt/test/*.h src/qt/res/style/*.qss
 
 # platform specific defaults, if not overridden on command line
 isEmpty(BOOST_LIB_SUFFIX) {

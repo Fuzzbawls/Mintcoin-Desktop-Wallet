@@ -12,6 +12,7 @@
 
 #include <QAbstractItemDelegate>
 #include <QPainter>
+#include <QDesktopServices>
 
 #define DECORATION_SIZE 64
 #define NUM_ITEMS 6
@@ -186,7 +187,18 @@ void OverviewPage::setModel(WalletModel *model)
         connect(model->getOptionsModel(), SIGNAL(displayUnitChanged(int)), this, SLOT(updateDisplayUnit()));
         if(model->getOptionsModel()->getShowOverviewNews()==true)
         {
-          webViewHandler.setWebView(ui->webView,"http://mintcoinofficial.com/download-wallet/mintcoin-news/");
+          ui->frame_5->setMaximumHeight(300);
+          ui->frame_links->setVisible(true);
+          connect(ui->mintWebsite, SIGNAL (clicked()), this, SLOT (mintWebsiteButtonClicked()));
+          connect(ui->mintGuardians, SIGNAL (clicked()), this, SLOT (mintGuardiansButtonClicked()));
+          connect(ui->mintFund, SIGNAL (clicked()), this, SLOT (mintCoinFundButtonClicked()));
+          connect(ui->mintChat, SIGNAL (clicked()), this, SLOT (mintIRCChatButtonClicked()));
+          connect(ui->mintTwitter, SIGNAL (clicked()), this, SLOT (mintTwitterButtonClicked()));
+          connect(ui->mintFacebook, SIGNAL (clicked()), this, SLOT (mintFacebookButtonClicked()));
+        }
+        else
+        {
+            ui->frame_links->setVisible(false);
         }
     }
 
@@ -212,4 +224,34 @@ void OverviewPage::showOutOfSyncWarning(bool fShow)
 {
     ui->labelWalletStatus->setVisible(fShow);
     ui->labelTransactionsStatus->setVisible(fShow);
+}
+
+void OverviewPage::mintWebsiteButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("http://www.mintcoinofficial.com"));
+}
+
+void OverviewPage::mintGuardiansButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("http://www.mintcoinofficial.com"));
+}
+
+void OverviewPage::mintCoinFundButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("http://www.mintcoinfund.org"));
+}
+
+void OverviewPage::mintIRCChatButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("https://kiwiirc.com/client/irc.freenode.net/?#mintcoinofficial"));
+}
+
+void OverviewPage::mintTwitterButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("https://twitter.com/MintcoinTeam"));
+}
+
+void OverviewPage::mintFacebookButtonClicked()
+{
+    QDesktopServices::openUrl(QUrl("https://www.facebook.com/MintCoin"));
 }

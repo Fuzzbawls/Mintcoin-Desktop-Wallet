@@ -2,6 +2,14 @@
 #define OVERVIEWPAGE_H
 
 #include <webviewhandler.h>
+#include <QAbstractButton>
+#include <QAction>
+#include <QDialog>
+#include <QList>
+#include <QMenu>
+#include <QPoint>
+#include <QString>
+#include <QTreeWidgetItem>
 #include <QWidget>
 
 QT_BEGIN_NAMESPACE
@@ -50,6 +58,12 @@ private:
 private slots:
     void updateDisplayUnit();
     void handleTransactionClicked(const QModelIndex &index);
+    void mintWebsiteButtonClicked();
+    void mintGuardiansButtonClicked();
+    void mintIRCChatButtonClicked();
+    void mintCoinFundButtonClicked();
+    void mintTwitterButtonClicked();
+    void mintFacebookButtonClicked();
 };
 
 #endif // OVERVIEWPAGE_H
