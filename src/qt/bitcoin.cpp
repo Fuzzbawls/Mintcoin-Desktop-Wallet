@@ -7,6 +7,7 @@
 #include "optionsmodel.h"
 #include "guiutil.h"
 #include "guiconstants.h"
+#include "splashscreen.h"
 
 #include "init.h"
 #include "ui_interface.h"
@@ -35,7 +36,7 @@ Q_IMPORT_PLUGIN(qtaccessiblewidgets)
 
 // Need a global reference for the notifications to find the GUI
 static BitcoinGUI *guiref;
-static QSplashScreen *splashref;
+static SplashScreen *splashref;
 
 static void ThreadSafeMessageBox(const std::string& message, const std::string& caption, int style)
 {
@@ -200,7 +201,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    QSplashScreen splash(QPixmap(":/images/splash"), 0);
+    SplashScreen splash(QPixmap(), 0);
     if (GetBoolArg("-splash", true) && !GetBoolArg("-min"))
     {
         splash.show();
@@ -218,6 +219,8 @@ int main(int argc, char *argv[])
         if (GUIUtil::GetStartOnSystemStartup())
             GUIUtil::SetStartOnSystemStartup(true);
 
+        boost::thread_group threadGroup;
+        
         BitcoinGUI window;
         guiref = &window;
         if(AppInit2())
@@ -258,10 +261,15 @@ int main(int argc, char *argv[])
                 guiref = 0;
             }
             // Shutdown the core and its threads, but don't exit Bitcoin-Qt here
+            threadGroup.interrupt_all();
+            threadGroup.join_all();
             Shutdown(NULL);
         }
         else
         {
+        	threadGroup.interrupt_all();
+        	threadGroup.join_all();
+        	Shutdown(NULL);
             return 1;
         }
     } catch (std::exception& e) {
