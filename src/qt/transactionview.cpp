@@ -59,6 +59,7 @@ TransactionView::TransactionView(QWidget *parent) :
     dateWidget->addItem(tr("Last month"), LastMonth);
     dateWidget->addItem(tr("This year"), ThisYear);
     dateWidget->addItem(tr("Range..."), Range);
+    dateWidget->view()->setFixedHeight(130);
     hlayout->addWidget(dateWidget);
 
     typeWidget = new QComboBox(this);
@@ -77,6 +78,7 @@ TransactionView::TransactionView(QWidget *parent) :
     typeWidget->addItem(tr("Minted"), TransactionFilterProxy::TYPE(TransactionRecord::StakeMint));
     typeWidget->addItem(tr("Mined"), TransactionFilterProxy::TYPE(TransactionRecord::Generated));
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
+    typeWidget->view()-setFixedHeight(130);
 
     hlayout->addWidget(typeWidget);
 
