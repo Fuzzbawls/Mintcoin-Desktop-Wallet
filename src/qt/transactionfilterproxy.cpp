@@ -28,8 +28,9 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     int type = index.data(TransactionTableModel::TypeRole).toInt();
     QDateTime datetime = index.data(TransactionTableModel::DateRole).toDateTime();
     QString address = index.data(TransactionTableModel::AddressRole).toString();
+    qint64 amount = index.data(TransactionTableModel::AmountRole).toLongLong();
+    qint64 abs_amount = llabs(amount);
     QString label = index.data(TransactionTableModel::LabelRole).toString();
-    qint64 amount = llabs(index.data(TransactionTableModel::AmountRole).toLongLong());
 
     if(!(TYPE(type) & typeFilter))
         return false;
@@ -37,8 +38,10 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
         return false;
     if (!address.contains(addrPrefix, Qt::CaseInsensitive) && !label.contains(addrPrefix, Qt::CaseInsensitive))
         return false;
-    if(amount < minAmount)
+    if(abs_amount < minAmount)
         return false;
+    
+    totalAmount += amount;
 
     return true;
 }
@@ -47,24 +50,28 @@ void TransactionFilterProxy::setDateRange(const QDateTime &from, const QDateTime
 {
     this->dateFrom = from;
     this->dateTo = to;
+    totalAmount = 0;
     invalidateFilter();
 }
 
 void TransactionFilterProxy::setAddressPrefix(const QString &addrPrefix)
 {
     this->addrPrefix = addrPrefix;
+    totalAmount = 0;
     invalidateFilter();
 }
 
 void TransactionFilterProxy::setTypeFilter(quint32 modes)
 {
     this->typeFilter = modes;
+    totalAmount = 0;
     invalidateFilter();
 }
 
 void TransactionFilterProxy::setMinAmount(qint64 minimum)
 {
     this->minAmount = minimum;
+    totalAmount = 0;
     invalidateFilter();
 }
 
