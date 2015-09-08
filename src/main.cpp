@@ -990,6 +990,22 @@ int64 GetProofOfStakeReward(int64 nCoinAge, unsigned int nBits, unsigned int nTi
     return nSubsidy;
 }
 
+int64 GetProofOfStakeRate(int nHeight)
+{
+    int64 nRewardCoinYear;
+
+    nRewardCoinYear = MAX_MINT_PROOF_OF_STAKE;
+
+    if(nHeight < YEARLY_BLOCKCOUNT)
+        nRewardCoinYear = 4 * MAX_MINT_PROOF_OF_STAKE;
+    else if(nHeight < (2 * YEARLY_BLOCKCOUNT))
+        nRewardCoinYear = 3 * MAX_MINT_PROOF_OF_STAKE;
+    else if(nHeight < (3 * YEARLY_BLOCKCOUNT))
+        nRewardCoinYear = 2 * MAX_MINT_PROOF_OF_STAKE;
+
+    return nRewardCoinYear;
+}
+
 static const int64 nTargetTimespan = 30 * 30;  
 static const int64 nTargetSpacingWorkMax = 3 * nStakeTargetSpacing; 
 
