@@ -42,6 +42,25 @@ double GetDifficulty(const CBlockIndex* blockindex)
     return dDiff;
 }
 
+double GetPoSRate(int nHeight)
+{
+    const int YEARLY_BLOCKCOUNT = 1051200;	// 365 * 2880
+    int64 nRewardCoinYear;
+
+    nRewardCoinYear = MAX_MINT_PROOF_OF_STAKE;
+
+    if(nHeight < YEARLY_BLOCKCOUNT)
+        nRewardCoinYear = 4 * MAX_MINT_PROOF_OF_STAKE;
+    else if(nHeight < (2 * YEARLY_BLOCKCOUNT))
+        nRewardCoinYear = 3 * MAX_MINT_PROOF_OF_STAKE;
+    else if(nHeight < (3 * YEARLY_BLOCKCOUNT))
+        nRewardCoinYear = 2 * MAX_MINT_PROOF_OF_STAKE;
+
+    nRewardCoinYear = nRewardCoinYear / 10000;
+
+    return nRewardCoinYear;
+}
+
 double GetPoSKernelPS()
 {
     int nPoSInterval = 72;
