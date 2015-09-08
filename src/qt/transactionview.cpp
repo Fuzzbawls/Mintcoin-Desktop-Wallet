@@ -78,7 +78,7 @@ TransactionView::TransactionView(QWidget *parent) :
     typeWidget->addItem(tr("Minted"), TransactionFilterProxy::TYPE(TransactionRecord::StakeMint));
     typeWidget->addItem(tr("Mined"), TransactionFilterProxy::TYPE(TransactionRecord::Generated));
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
-    typeWidget->view()-setFixedHeight(130);
+    typeWidget->view()->setFixedHeight(130);
 
     hlayout->addWidget(typeWidget);
 

@@ -472,3 +472,9 @@ void WalletModel::UnlockContext::CopyFrom(const UnlockContext& rhs)
  {
      return;
  }
+
+ //Information for coin control
+ void WalletModel::getStakeWeightFromValue(const int64& nTime, const int64& nValue, uint64& nWeight)
+ {
+    wallet->GetStakeWeightFromValue(nTime, nValue, nWeight);
+ }

@@ -193,6 +193,7 @@ public:
     bool GetKeyFromPool(CPubKey &key, bool fAllowReuse=true);
     int64 GetOldestKeyPoolTime();
     void GetAllReserveKeys(std::set<CKeyID>& setAddress);
+    bool GetStakeWeightFromValue(const int64& nTime, const int64& nValue, uint64& nWeight);
 
     std::set< std::set<CTxDestination> > GetAddressGroupings();
     std::map<CTxDestination, int64> GetAddressBalances();
