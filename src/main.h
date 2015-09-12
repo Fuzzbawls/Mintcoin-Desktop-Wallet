@@ -1361,9 +1361,16 @@ public:
     unsigned int GetTxOffset(CTransaction &tx)
     {
         unsigned int txOffset = ::GetSerializeSize(CBlock(), SER_DISK, CLIENT_VERSION) - (2 * GetSizeOfCompactSize(0)) + GetSizeOfCompactSize(vtx.size());
-        for(int i=0; tx.GetHash() == vtx[i].GetHash(); i++)
+        int i=0;
+        uint256 hash = tx.GetHash();
+        if(hash == vtx[i].GetHash())
+            return txOffset;
+        do
+        {
             txOffset += ::GetSerializeSize(vtx[i], SER_DISK, CLIENT_VERSION);
-        return txOffset; 
+            i++;
+        }while(hash == vtx[i].GetHash());
+        return txOffset;
     }
 
 
