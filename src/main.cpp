@@ -1391,7 +1391,7 @@ bool CTransaction::HaveInputs(CCoinsViewCache &inputs) const
     return true;
 }
 
-bool CTransaction::CheckInputs(CCoinsViewCache &inputs, enum CheckSig_mode csmode, bool fStrictPayToScriptHash, bool fStrictEncodings) const
+bool CTransaction::CheckInputs(CCoinsViewCache &inputs, enum CheckSig_mode csmode, bool fStrictPayToScriptHash, bool fStrictEncodings, CBlock *block) const
 {
     if (!IsCoinBase())
     {
@@ -1403,14 +1403,23 @@ bool CTransaction::CheckInputs(CCoinsViewCache &inputs, enum CheckSig_mode csmod
         CBlockIndex *pindexBlock = inputs.GetBestBlock();
         int64 nValueIn = 0;
         int64 nFees = 0;
-        uint256 blockHash;
+
         for (unsigned int i = 0; i < vin.size(); i++)
         {
+            uint256 blockHash = NULL;
             const COutPoint &prevout = vin[i].prevout;
             const CCoins &coins = inputs.GetCoins(prevout.hash);
             
             CTransaction txPrev;
             GetTransaction(prevout.hash, txPrev, blockHash, true);
+
+            // ppcoin: if no block is provided, check initiated in mempool and will be checked again on block creation
+            if(blockHash == NULL && block != NULL){
+                BOOST_FOREACH(CTransaction &tx, block->vtx){
+                    if(tx.GetHash() == prevout.hash){
+                        txPrev = tx;}}}
+                
+            
 
 			int nMinConfirmations = (GetAdjustedTime() > FORK_TIME ? nCoinbaseMaturity + 10 : nCoinbaseMaturity);
             
@@ -1421,7 +1430,7 @@ bool CTransaction::CheckInputs(CCoinsViewCache &inputs, enum CheckSig_mode csmod
                     return error("CheckInputs() : tried to spend coinbase at depth %d", pindexBlock->nHeight - coins.nHeight);
             }
             // ppcoin: check transaction timestamp
-            if (txPrev.nTime > nTime)
+            if (block && txPrev.nTime > nTime)
                 return DoS(100, error("CheckInputs() : transaction timestamp earlier than input transaction"));
 
             // Check for negative or overflow input values
@@ -1693,7 +1702,7 @@ bool CBlock::ConnectBlock(CBlockIndex* pindex, CCoinsViewCache &view, bool fJust
             if (!tx.IsCoinStake())
                 nFees += nTxValueIn - nTxValueOut;
 
-            if (!tx.CheckInputs(view, CS_AFTER_CHECKPOINT, fStrictPayToScriptHash, false))
+            if (!tx.CheckInputs(view, CS_AFTER_CHECKPOINT, fStrictPayToScriptHash, false, this))
                 return false;
         }
 
@@ -1824,8 +1833,6 @@ bool SetBestChain(CBlockIndex* pindexNew)
     vector<CTransaction> vDelete;
     BOOST_FOREACH(CBlockIndex *pindex, vConnect)
     {
-        if(pindex->nHeight == 359)
-            printf("BreakPoint");
         CBlock block;
         if (!block.ReadFromDisk(pindex))
             return error("SetBestBlock() : ReadFromDisk for connect failed");
@@ -4349,7 +4356,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
             if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS)
                 continue;
 
-            if (!tx.CheckInputs(viewTemp, CS_ALWAYS, true, false))
+            if (!tx.CheckInputs(viewTemp, CS_ALWAYS, true, false, pblock.get()))
                 continue;
             
             CTxUndo txundo;
