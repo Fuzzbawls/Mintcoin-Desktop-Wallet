@@ -1369,7 +1369,7 @@ public:
         {
             txOffset += ::GetSerializeSize(vtx[i], SER_DISK, CLIENT_VERSION);
             i++;
-        }while(hash == vtx[i].GetHash());
+        }while(hash != vtx[i].GetHash());
         return txOffset;
     }
 
