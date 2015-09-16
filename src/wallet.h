@@ -301,7 +301,7 @@ public:
     // get the current wallet format (the oldest client version guaranteed to understand this wallet)
     int GetVersion() { return nWalletVersion; }
 
-    void FixSpentCoins(int& nMismatchSpent, int64& nBalanceInQuestion, int& nOrphansFound, bool fCheckOnly = false);
+    void FixSpentCoins(int& nMismatchSpent, int64& nBalanceInQuestion, bool fCheckOnly = false);
     void DisableTransaction(const CTransaction &tx);
 
     /** Address book entry changed.
@@ -640,8 +640,6 @@ public:
             return false;
         if (GetDepthInMainChain() >= 1)
             return true;
-        if (GetDepthInMainChain() < 0)
-        	return false;
         if (!IsFromMe()) // using wtx's cached debit
             return false;
 
@@ -676,24 +674,6 @@ public:
             }
         }
         return true;
-    }
-    
-    bool IsConfirmedInMainChain() const
-    {
-    	//presstab - removed code that checks walletdb for confirmation, we want blockchain info only
-    	
-    	// Quick answer in most cases
-    	if (!IsFinal())
-    		return false;
-    	int nDepth = GetDepthInMainChain();
-    	if (nDepth >= 1)
-    		return true;
-    	if (nDepth < 0)
-    		return false;
-    	if (!IsFromMe()) // using wtx's cached debit
-    		return false;
-    		
-    	return false;
     }
 
     bool WriteToDisk();
