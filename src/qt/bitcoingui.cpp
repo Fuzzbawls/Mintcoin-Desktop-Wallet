@@ -558,66 +558,25 @@ void BitcoinGUI::aboutClicked()
 
 void BitcoinGUI::checkWallet()
 {
-	int nMismatchSpent;
-	int64 nBalanceInQuestion;
-	int nOrphansFound;
-	
-	if(!walletModel)
-		return;
-	
-	// Check the wallet as requested by user
-	pwalletMain->FixSpentCoins(nMismatchSpent, nBalanceInQuestion, nOrphansFound, true);
-	if (nMismatchSpent == 0 && nOrphansFound == 0)
-	{
-		QMessageBox::information(
-        	this,
-        	tr("Check Wallet"),
-        	tr("Wallet check passed!") );
-	}
-	else
-	{
-    	QMessageBox::information(this, tr("Check Wallet"), tr("Wallet failed integrity test!\n\n"
-      		"Mismatched coin(s) found: %1.\n"
-      		"Amount in question: %2.\n"
-      		"Orphans found: %3.\n\n"
-      		"Please backup wallet and run repair wallet.\n")
-      	  		.arg(QString::number(nMismatchSpent))
-      	  		.arg(QString::number(nBalanceInQuestion))
-      	  		.arg(QString::number(nOrphansFound)));
-	}
+  int nMismatchSpent;
+  int64 nBalanceInQuestion;
+  pwalletMain->FixSpentCoins(nMismatchSpent, nBalanceInQuestion, true);
+  if (nMismatchSpent == 0)
+  {
+      QMessageBox::information(
+          this,
+          tr("Check Wallet"),
+          tr("wallet check passed") );
+  }
+  else
+  {
+      QMessageBox::information(
+          this,
+          tr("Check Wallet"),
+          tr("mismatched spent coins ") + QString::number(nMismatchSpent),
+          tr("amount in question ") + QString::number(nBalanceInQuestion));
+  }
 }
-
-void BitcoinGUI::repairWallet()
-{
-    int nMismatchSpent;
-    int64 nBalanceInQuestion;
-    int nOrphansFound;
-    
-    if(!walletModel)
-    	return;
-    	
-    // Repair the wallet as requested by user
-    pwalletMain->FixSpentCoins(nMismatchSpent, nBalanceInQuestion, nOrphansFound);
-    if (nMismatchSpent == 0 && nOrphansFound == 0)
-    {
-    	QMessageBox::information(
-        	this,
-        	tr("Check Wallet"),
-        	tr("Wallet check passed!") );
-    }
-    else
-    {
-    	QMessageBox::information(this, tr("Repair Wallet"), tr("Wallet failed integrity test and has been repaired!\n\n"
-    		"Mismatched coin(s) found: %1.\n"
-            "Amount affected by repair: %2.\n"
-            "Orphans removed: %3.\n")
-        		.arg(QString::number(nMismatchSpent))
-            	.arg(QString::number(nBalanceInQuestion))
-                .arg(QString::number(nOrphansFound)));
-    }
-}
-
-
 
 void BitcoinGUI::setNumConnections(int count)
 {
@@ -1026,6 +985,51 @@ void BitcoinGUI::backupWallet()
             QMessageBox::warning(this, tr("Backup Failed"), tr("There was an error trying to save the wallet data to the new location."));
         }
     }
+}
+
+void BitcoinGUI::repairWallet()
+{
+    QString rwResult;
+    std::vector<std::string> args;
+    std::string strPrint;
+    args.push_back("repairwallet");
+    try
+    {
+
+        json_spirit::Value result = tableRPC.execute(
+            args[0],
+            RPCConvertValues(args[0], std::vector<std::string>(args.begin() + 1, args.end())));
+
+        if (result.type() == json_spirit::null_type)
+            strPrint = "";
+        else if (result.type() == json_spirit::str_type)
+            strPrint = result.get_str();
+        else
+            strPrint = write_string(result, true);
+    }
+    catch (json_spirit::Object& objError)
+    {
+        try
+        {
+            strPrint = find_value(objError, "message").get_str();
+        }
+        catch(std::runtime_error &) // raised when converting to invalid type, i.e. missing code or message
+        {   // Show raw JSON object
+            strPrint = write_string(json_spirit::Value(objError), false);
+        }
+    }
+    catch (std::exception& e)
+    {
+        rwResult = QString("Error: ") + QString::fromStdString(e.what());
+    }
+
+    rwResult= QString::fromStdString(strPrint);
+    rwResult.remove(0,1);
+    rwResult.remove(rwResult.size()-1,1);
+    RepairWalletDialog dlg;
+    dlg.setResultLabel(rwResult);
+    dlg.exec();
+
 }
 
 void BitcoinGUI::changePassphrase()
