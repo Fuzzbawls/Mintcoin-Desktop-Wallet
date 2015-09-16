@@ -379,7 +379,7 @@
          <number>-1</number>
         </property>
         <item row="1" column="0" alignment="Qt::AlignLeft">
-         <widget class="QPushButton" name="mintGuardians">
+         <widget class="QPushButton" name="mintYoutube">
           <property name="cursor">
            <cursorShape>PointingHandCursor</cursorShape>
           </property>
@@ -387,11 +387,11 @@
            <string notr="true"/>
           </property>
           <property name="text">
-           <string>MintCoin Guardians</string>
+           <string>MintCoin Youtube</string>
           </property>
           <property name="icon">
            <iconset resource="../bitcoin.qrc">
-            <normaloff>:/icons/address-book</normaloff>:/icons/address-book</iconset>
+            <normaloff>:/icons/youtube</normaloff>:/icons/youtube</iconset>
           </property>
           <property name="iconSize">
            <size>
@@ -469,7 +469,7 @@
           </property>
           <property name="icon">
            <iconset resource="../bitcoin.qrc">
-            <normaloff>:/icons/address-book</normaloff>:/icons/address-book</iconset>
+            <normaloff>:/icons/ircchat</normaloff>:/icons/ircchat</iconset>
           </property>
           <property name="iconSize">
            <size>
@@ -492,7 +492,7 @@
           </property>
           <property name="icon">
            <iconset resource="../bitcoin.qrc">
-            <normaloff>:/icons/address-book</normaloff>:/icons/address-book</iconset>
+            <normaloff>:/icons/twitter</normaloff>:/icons/twitter</iconset>
           </property>
           <property name="iconSize">
            <size>
@@ -515,7 +515,7 @@
           </property>
           <property name="icon">
            <iconset resource="../bitcoin.qrc">
-            <normaloff>:/icons/address-book</normaloff>:/icons/address-book</iconset>
+            <normaloff>:/icons/facebook</normaloff>:/icons/facebook</iconset>
           </property>
           <property name="iconSize">
            <size>

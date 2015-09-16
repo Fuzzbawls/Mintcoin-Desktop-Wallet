@@ -233,7 +233,7 @@ void OverviewPage::mintWebsiteButtonClicked()
 
 void OverviewPage::mintYoutubeButtonClicked()
 {
-    QDesktopServices::openUrl(QUrl("http://www.mintcoinofficial.com"));
+    QDesktopServices::openUrl(QUrl("https://www.youtube.com/channel/UCUuJ8orI0WndsOx7SSCwZEw"));
 }
 
 void OverviewPage::mintCoinFundButtonClicked()

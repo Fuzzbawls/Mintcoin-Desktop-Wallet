@@ -304,7 +304,7 @@ QPushButton:pressed, QToolButton:pressed {
 	color: #031e04;
 }
 
-#mintWebsite, #mintGuardians, #mintFund, #mintChat, #mintTwitter, #mintFacebook {
+#mintWebsite, #mintYoutube, #mintFund, #mintChat, #mintTwitter, #mintFacebook {
         background-color:transparent!important;
         color: rgb(33, 89, 34)!important;
         border:0!important;
@@ -312,7 +312,7 @@ QPushButton:pressed, QToolButton:pressed {
         padding:0!important;
 }
 
-#mintWebsite:hover, #mintGuardians:hover, #mintFund:hover, #mintChat:hover, #mintTwitter:hover, #mintFacebook:hover {
+#mintWebsite:hover, #mintYoutube:hover, #mintFund:hover, #mintChat:hover, #mintTwitter:hover, #mintFacebook:hover {
         color: rgb(196, 129, 46)!important;
 }
 
