@@ -6,11 +6,14 @@
 #ifndef BITCOIN_LEVELDB_H
 #define BITCOIN_LEVELDB_H
 
+#include "main.h"
 
+#include <map>
+#include <string>
+#include <vector>
 
-
-
-
+#include <leveldb/db.h>
+#include <leveldb/write_batch.h>
 
 // Class that provides access to a LevelDB. Note that this class is frequently
 // instantiated on the stack and then destroyed again, so instantiation has to
@@ -192,10 +195,6 @@ public:
     bool WriteHashBestChain(uint256 hashBestChain);
     bool ReadBestInvalidTrust(CBigNum& bnBestInvalidTrust);
     bool WriteBestInvalidTrust(CBigNum bnBestInvalidTrust);
-    bool ReadBlockFileInfo(int nFile, CBlockFileInfo &fileinfo);
-    bool WriteBlockFileInfo(int nFile, const CBlockFileInfo &fileinfo);
-    bool ReadLastBlockFile(int &nFile);
-    bool WriteLastBlockFile(int nFile);
     bool ReadSyncCheckpoint(uint256& hashCheckpoint);
     bool WriteSyncCheckpoint(uint256 hashCheckpoint);
     bool ReadCheckpointPubKey(std::string& strPubKey);

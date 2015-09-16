@@ -28,7 +28,7 @@ void MakeMockTXDB() {
 }
 
 //
-// CChainDB and CCoinsDB
+// CTxDB
 //
 
 bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex& txindex)
@@ -193,24 +193,14 @@ bool CTxDB::LoadBlockIndex()
             return true;
         return error("CTxDB::LoadBlockIndex() : hashBestChain not loaded");
     }
-    std::map<uint256, CBlockIndex*>::iterator it = mapBlockIndex.find(hashBestChain);
-    if (it == mapBlockIndex.end()) {
+    if (!mapBlockIndex.count(hashBestChain))
         return error("CTxDB::LoadBlockIndex() : hashBestChain not found in the block index");
-    } else {
-        // set 'next' pointers in best chain
-        CBlockIndex *pindex = it->second;
-        while(pindex != NULL && pindex->pprev != NULL) {
-             CBlockIndex *pindexPrev = pindex->pprev;
-             pindexPrev->pnext = pindex;
-             pindex = pindexPrev;
-        }
-        pindexBest = it->second;
-        nBestHeight = pindexBest->nHeight;
-        bnBestChainWork = pindexBest->nChainTrust;
-    }
+    pindexBest = mapBlockIndex[hashBestChain];
+    nBestHeight = pindexBest->nHeight;
+    nBestChainTrust = pindexBest->nChainTrust;
     printf("LoadBlockIndex(): hashBestChain=%s  height=%d  trust=%s  date=%s\n",
-        hashBestChain.ToString().substr(0,20).c_str(), nBestHeight, CBigNum(nBestChainTrust).ToString().c_str(),
-        DateTimeStrFormat("%x %H:%M:%S", pindexBest->GetBlockTime()).c_str());
+      hashBestChain.ToString().substr(0,20).c_str(), nBestHeight, CBigNum(nBestChainTrust).ToString().c_str(),
+      DateTimeStrFormat("%x %H:%M:%S", pindexBest->GetBlockTime()).c_str());
 
     // ppcoin: load hashSyncCheckpoint
     if (!ReadSyncCheckpoint(Checkpoints::hashSyncCheckpoint))

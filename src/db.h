@@ -17,9 +17,10 @@ class CAddress;
 class CAddrMan;
 class CBlockLocator;
 class CDiskBlockIndex;
-//class CDiskTxPos;
+class CDiskTxPos;
 class CMasterKey;
 class COutPoint;
+class CTxIndex;
 class CWallet;
 class CWalletTx;
 
@@ -104,7 +105,6 @@ protected:
     explicit CDB(const char* pszFile, const char* pszMode="r+");
     ~CDB() { Close(); }
 public:
-    void Flush();
     void Close();
 private:
     CDB(const CDB&);

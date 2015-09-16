@@ -9,261 +9,295 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
+#include <leveldb/env.h>
+#include <leveldb/cache.h>
+#include <leveldb/filter_policy.h>
+#include <memenv/memenv.h>
+
+#include "kernel.h"
 #include "checkpoints.h"
 #include "txdb.h"
-#include "kernel.h"
+#include "util.h"
+#include "main.h"
 
 using namespace std;
 using namespace boost;
 
+leveldb::DB *txdb;
 
-void static BatchWriteCoins(CLevelDBBatch &batch, const uint256 &hash, const CCoins &coins) {
-    if (coins.IsPruned())
-        batch.Erase(make_pair('c', hash));
-    else
-        batch.Write(make_pair('c', hash), coins);
+static leveldb::Options GetOptions() {
+    leveldb::Options options;
+    int nCacheSizeMB = GetArg("-dbcache", 25);
+    options.block_cache = leveldb::NewLRUCache(nCacheSizeMB * 1048576);
+    options.filter_policy = leveldb::NewBloomFilterPolicy(10); 
+    return options;
 }
 
-void static BatchWriteHashBestChain(CLevelDBBatch &batch, const uint256 &hash) {
-    batch.Write('B', hash);
+void MakeMockTXDB() {
+    leveldb::Options options = GetOptions();
+    options.create_if_missing = true;
+    // This will leak but don't care here.
+    options.env = leveldb::NewMemEnv(leveldb::Env::Default());
+    leveldb::Status status = leveldb::DB::Open(options, "txdb", &txdb);
+    if (!status.ok()) 
+        throw runtime_error(strprintf("Could not create mock LevelDB: %s", status.ToString().c_str()));
+    CTxDB txdb("w");
+    txdb.WriteVersion(CLIENT_VERSION);
 }
 
-CCoinsViewDB::CCoinsViewDB(bool fMemory) : db(GetDataDir() / "coins", fMemory) {}
-
-bool CCoinsViewDB::GetCoins(uint256 txid, CCoins &coins) { 
-    return db.Read(make_pair('c', txid), coins); 
-}
-
-bool CCoinsViewDB::SetCoins(uint256 txid, const CCoins &coins) {
-    CLevelDBBatch batch;
-    BatchWriteCoins(batch, txid, coins);
-    return db.WriteBatch(batch);
-}
-
-bool CCoinsViewDB::HaveCoins(uint256 txid) {
-    return db.Exists(make_pair('c', txid)); 
-}
-
-CBlockIndex *CCoinsViewDB::GetBestBlock() {
-    uint256 hashBestChain;
-    if (!db.Read('B', hashBestChain))
-        return NULL;
-    std::map<uint256, CBlockIndex*>::iterator it = mapBlockIndex.find(hashBestChain);
-    if (it == mapBlockIndex.end())
-        return NULL;
-    return it->second;
-}
-
-bool CCoinsViewDB::SetBestBlock(CBlockIndex *pindex) {
-    CLevelDBBatch batch;
-    BatchWriteHashBestChain(batch, pindex->GetBlockHash()); 
-    return db.WriteBatch(batch);
-}
-
-bool CCoinsViewDB::BatchWrite(const std::map<uint256, CCoins> &mapCoins, CBlockIndex *pindex) {
-    printf("Committing %u changed transactions to coin database...\n", (unsigned int)mapCoins.size());
-
-    CLevelDBBatch batch;
-    for (std::map<uint256, CCoins>::const_iterator it = mapCoins.begin(); it != mapCoins.end(); it++)
-        BatchWriteCoins(batch, it->first, it->second);
-    BatchWriteHashBestChain(batch, pindex->GetBlockHash());
-
-    return db.WriteBatch(batch);
-}
-
-CBlockTreeDB::CBlockTreeDB(bool fMemory) : CLevelDB(GetDataDir() / "blktree", fMemory) {}
-
-bool CBlockTreeDB::WriteBlockIndex(const CDiskBlockIndex& blockindex)
+// NOTE: CDB subclasses are created and destroyed VERY OFTEN. Therefore we have
+// to keep databases in global variables to avoid constantly creating and
+// destroying them, which sucks. In future the code should be changed to not
+// treat the instantiation of a database as a free operation.
+CTxDB::CTxDB(const char* pszMode)
 {
-    return Write(make_pair('b', blockindex.GetBlockHash()), blockindex);
-}
+    assert(pszMode);
+    pdb = txdb;
+    activeBatch = NULL;
+    fReadOnly = (!strchr(pszMode, '+') && !strchr(pszMode, 'w'));
 
-bool CBlockTreeDB::ReadBestInvalidTrust(CBigNum& bnBestInvalidTrust)
-{
-    return Read('I', bnBestInvalidTrust);
-}
+    if (txdb)
+        return;
 
-bool CBlockTreeDB::WriteBestInvalidTrust(const CBigNum& bnBestInvalidTrust)
-{
-    return Write('I', bnBestInvalidTrust);
-}
+    // First time init.
+    filesystem::path directory = GetDataDir() / "txleveldb";
+    bool fCreate = strchr(pszMode, 'c');
 
-bool CBlockTreeDB::WriteBlockFileInfo(int nFile, const CBlockFileInfo &info) {
-    return Write(make_pair('f', nFile), info);
-}
-
-bool CBlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo &info) {
-    return Read(make_pair('f', nFile), info);
-}
-
-bool CBlockTreeDB::WriteLastBlockFile(int nFile) {
-    return Write('l', nFile);
-}
-
-bool CBlockTreeDB::ReadLastBlockFile(int &nFile) {
-    return Read('l', nFile);
-}
-
-
-bool CBlockTreeDB::ReadSyncCheckpoint(uint256& hashCheckpoint)
-{
-    return Read('s', hashCheckpoint);
-}
-
-bool CBlockTreeDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
-{
-    return Write('s', hashCheckpoint);
-}
-
-bool CBlockTreeDB::ReadCheckpointPubKey(string& strPubKey)
-{
-    return Read('p', strPubKey);
-}
-
-bool CBlockTreeDB::WriteCheckpointPubKey(const string& strPubKey)
-{
-    return Write('p', strPubKey);
-}
-
-bool CCoinsViewDB::GetStats(CCoinsStats &stats) {
-    leveldb::Iterator *pcursor = db.NewIterator();
-    pcursor->SeekToFirst();
-
-    while (pcursor->Valid()) {
-        try {
-            leveldb::Slice slKey = pcursor->key();
-            CDataStream ssKey(slKey.data(), slKey.data()+slKey.size(), SER_DISK, CLIENT_VERSION);
-            char chType;
-            ssKey >> chType;
-            if (chType == 'c' && !fRequestShutdown) {
-                leveldb::Slice slValue = pcursor->value();
-                CDataStream ssValue(slValue.data(), slValue.data()+slValue.size(), SER_DISK, CLIENT_VERSION);
-                CCoins coins;
-                ssValue >> coins;
-                uint256 txhash;
-                ssKey >> txhash;
-
-                stats.nTransactions++;
-                BOOST_FOREACH(const CTxOut &out, coins.vout) {
-                    if (!out.IsNull())
-                        stats.nTransactionOutputs++;
-                }
-                stats.nSerializedSize += 32 + slValue.size();
-            }
-            pcursor->Next();
-        } catch (std::exception &e) {
-            return error("%s() : deserialize error", __PRETTY_FUNCTION__);
-        }
+    options = GetOptions();
+    options.create_if_missing = fCreate;
+    options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+    filesystem::create_directory(directory);
+    printf("Opening LevelDB in %s\n", directory.string().c_str());
+    leveldb::Status status = leveldb::DB::Open(options, directory.string(), &txdb);
+    if (!status.ok()) {
+        throw runtime_error(strprintf("CDB(): error opening database environment %s", status.ToString().c_str()));
     }
-    delete pcursor;
-    stats.nHeight = GetBestBlock()->nHeight;
-    return true;
-}
+    pdb = txdb;
 
-bool CBlockTreeDB::LoadBlockIndexGuts()
-{ 
-    
-    // The block index is an in-memory structure that maps hashes to on-disk
-    // locations where the contents of the block can be found. Here, we scan it
-    // out of the DB and into mapBlockIndex.
-    leveldb::Iterator *pcursor = NewIterator();
-    
-    // Seek to start key.
-    CDataStream ssStartKey(SER_DISK, CLIENT_VERSION);
-    ssStartKey << make_pair('b', uint256(0));
-    pcursor->Seek(ssStartKey.str());
-    
-    // Now read each entry.
-    while (pcursor->Valid())
+    if (fCreate && !Exists(string("version")))
     {
-        // Unpack keys and values.
-        leveldb::Slice slKey = pcursor->key();
-        CDataStream ssKey(slKey.data(), slKey.data()+slKey.size(), SER_DISK, CLIENT_VERSION);
-        
-        char chType;
-        ssKey >> chType;
-
-        if (fRequestShutdown || chType != 'b')
-            break;
-        
-        leveldb::Slice slValue = pcursor->value();
-        CDataStream ssValue(slValue.data(), slValue.data()+slValue.size(), SER_DISK, CLIENT_VERSION);
-        
-        CDiskBlockIndex diskindex;
-        ssValue >> diskindex;
-
-        // Construct block index object
-        CBlockIndex* pindexNew    = InsertBlockIndex(diskindex.GetBlockHash());
-        pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
-        pindexNew->nFile          = diskindex.nFile;
-        pindexNew->nHeight        = diskindex.nHeight;
-        pindexNew->nDataPos       = diskindex.nDataPos;
-        pindexNew->nUndoPos       = diskindex.nUndoPos;
-        pindexNew->nMint          = diskindex.nMint;
-        pindexNew->nMoneySupply   = diskindex.nMoneySupply;
-        pindexNew->nFlags         = diskindex.nFlags;
-        pindexNew->nStakeModifier = diskindex.nStakeModifier;
-        pindexNew->prevoutStake   = diskindex.prevoutStake;
-        pindexNew->nStakeTime     = diskindex.nStakeTime;
-        pindexNew->hashProofOfStake = diskindex.hashProofOfStake;
-        pindexNew->nVersion       = diskindex.nVersion;
-        pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
-        pindexNew->nTime          = diskindex.nTime;
-        pindexNew->nBits          = diskindex.nBits;
-        pindexNew->nNonce         = diskindex.nNonce;
-        pindexNew->nStatus        = diskindex.nStatus;
-        pindexNew->nTx            = diskindex.nTx;
-
-        // Watch for genesis block
-        if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
-            pindexGenesisBlock = pindexNew;
-
-        if (!pindexNew->CheckIndex()) {
-            delete pcursor;
-            return error("LoadBlockIndex() : CheckIndex failed: %s", pindexNew->ToString().c_str());
-        }
-
-        // NovaCoin: build setStakeSeen
-        if (pindexNew->IsProofOfStake())
-            setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
-
-        pcursor->Next();
+        bool fTmp = fReadOnly;
+        fReadOnly = false;
+        WriteVersion(CLIENT_VERSION);
+        fReadOnly = fTmp;
     }
+    printf("Opened LevelDB successfully\n");
+}
 
-    delete pcursor;
+void CTxDB::Close()
+{
+    delete txdb;
+    txdb = pdb = NULL;
+    delete options.filter_policy;
+    options.filter_policy = NULL;
+    delete options.block_cache;
+    options.block_cache = NULL;
+    delete activeBatch;
+    activeBatch = NULL;
+}
+
+bool CTxDB::TxnBegin()
+{
+    assert(!activeBatch);
+    activeBatch = new leveldb::WriteBatch();
     return true;
 }
 
-//////////////////////////////////////////////////////////////////////////////
-//
-// CDBConverter
-//
+bool CTxDB::TxnCommit()
+{
+    assert(activeBatch);
+    leveldb::Status status = pdb->Write(leveldb::WriteOptions(), activeBatch);
+    delete activeBatch;
+    activeBatch = NULL;
+    if (!status.ok()) {
+        printf("LevelDB batch commit failure: %s\n", status.ToString().c_str());
+        return false;
+    }
+    return true;
+}
 
-COldBlockIndex *CDBConverter::InsertBlockIndex(uint256 hash)
+class CBatchScanner : public leveldb::WriteBatch::Handler {
+public:
+    std::string needle;
+    bool *deleted;
+    std::string *foundValue;
+    bool foundEntry;
+
+    CBatchScanner() : foundEntry(false) {}
+
+    virtual void Put(const leveldb::Slice& key, const leveldb::Slice& value) {
+        if (key.ToString() == needle) {
+            foundEntry = true;
+            *deleted = false;
+            *foundValue = value.ToString();
+        }
+    }
+
+    virtual void Delete(const leveldb::Slice& key) {
+        if (key.ToString() == needle) {
+            foundEntry = true;
+            *deleted = true;
+        }
+    }
+};
+
+// When performing a read, if we have an active batch we need to check it first
+// before reading from the database, as the rest of the code assumes that once
+// a database transaction begins reads are consistent with it. It would be good
+// to change that assumption in future and avoid the performance hit, though in
+// practice it does not appear to be large.
+bool CTxDB::ScanBatch(const CDataStream &key, string *value, bool *deleted) const {
+    assert(activeBatch);
+    *deleted = false;
+    CBatchScanner scanner;
+    scanner.needle = key.str();
+    scanner.deleted = deleted;
+    scanner.foundValue = value;
+    leveldb::Status status = activeBatch->Iterate(&scanner);
+    if (!status.ok()) {
+        throw runtime_error(status.ToString());
+    }
+    return scanner.foundEntry;
+}
+
+bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex& txindex)
+{
+    assert(!fClient);
+    txindex.SetNull();
+    return Read(make_pair(string("tx"), hash), txindex);
+}
+
+bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex& txindex)
+{
+    assert(!fClient);
+    return Write(make_pair(string("tx"), hash), txindex);
+}
+
+bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight)
+{
+    assert(!fClient);
+
+    // Add to tx index
+    uint256 hash = tx.GetHash();
+    CTxIndex txindex(pos, tx.vout.size());
+    return Write(make_pair(string("tx"), hash), txindex);
+}
+
+bool CTxDB::EraseTxIndex(const CTransaction& tx)
+{
+    assert(!fClient);
+    uint256 hash = tx.GetHash();
+
+    return Erase(make_pair(string("tx"), hash));
+}
+
+bool CTxDB::ContainsTx(uint256 hash)
+{
+    assert(!fClient);
+    return Exists(make_pair(string("tx"), hash));
+}
+
+bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex)
+{
+    assert(!fClient);
+    tx.SetNull();
+    if (!ReadTxIndex(hash, txindex))
+        return false;
+    return (tx.ReadFromDisk(txindex.pos));
+}
+
+bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx)
+{
+    CTxIndex txindex;
+    return ReadDiskTx(hash, tx, txindex);
+}
+
+bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx, CTxIndex& txindex)
+{
+    return ReadDiskTx(outpoint.hash, tx, txindex);
+}
+
+bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx)
+{
+    CTxIndex txindex;
+    return ReadDiskTx(outpoint.hash, tx, txindex);
+}
+
+bool CTxDB::WriteBlockIndex(const CDiskBlockIndex& blockindex)
+{
+    return Write(make_pair(string("blockindex"), blockindex.GetBlockHash()), blockindex);
+}
+
+bool CTxDB::ReadHashBestChain(uint256& hashBestChain)
+{
+    return Read(string("hashBestChain"), hashBestChain);
+}
+
+bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
+{
+    return Write(string("hashBestChain"), hashBestChain);
+}
+
+bool CTxDB::ReadBestInvalidTrust(CBigNum& bnBestInvalidTrust)
+{
+    return Read(string("bnBestInvalidTrust"), bnBestInvalidTrust);
+}
+
+bool CTxDB::WriteBestInvalidTrust(CBigNum bnBestInvalidTrust)
+{
+    return Write(string("bnBestInvalidTrust"), bnBestInvalidTrust);
+}
+
+bool CTxDB::ReadSyncCheckpoint(uint256& hashCheckpoint)
+{
+    return Read(string("hashSyncCheckpoint"), hashCheckpoint);
+}
+
+bool CTxDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
+{
+    return Write(string("hashSyncCheckpoint"), hashCheckpoint);
+}
+
+bool CTxDB::ReadCheckpointPubKey(string& strPubKey)
+{
+    return Read(string("strCheckpointPubKey"), strPubKey);
+}
+
+bool CTxDB::WriteCheckpointPubKey(const string& strPubKey)
+{
+    return Write(string("strCheckpointPubKey"), strPubKey);
+}
+
+static CBlockIndex *InsertBlockIndex(uint256 hash)
 {
     if (hash == 0)
         return NULL;
 
     // Return existing
-    map<uint256, COldBlockIndex*>::iterator mi = mapOldBlockIndex.find(hash);
-    if (mi != mapOldBlockIndex.end())
+    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hash);
+    if (mi != mapBlockIndex.end())
         return (*mi).second;
 
     // Create new
-    COldBlockIndex* pindexNew = new COldBlockIndex();
+    CBlockIndex* pindexNew = new CBlockIndex();
     if (!pindexNew)
         throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-    mi = mapOldBlockIndex.insert(make_pair(hash, pindexNew)).first;
+    mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
     pindexNew->phashBlock = &((*mi).first);
 
     return pindexNew;
 }
 
-bool CDBConverter::LoadBlockIndex()
+bool CTxDB::LoadBlockIndex()
 {
+    if (mapBlockIndex.size() > 0) {
+        // Already loaded once in this session. It can happen during migration
+        // from BDB.
+        return true;
+    }
     // The block index is an in-memory structure that maps hashes to on-disk
     // locations where the contents of the block can be found. Here, we scan it
-    // out of the DB and into mapOldBlockIndex.
+    // out of the DB and into mapBlockIndex.
     leveldb::Iterator *iterator = pdb->NewIterator(leveldb::ReadOptions());
     // Seek to start key.
     CDataStream ssStartKey(SER_DISK, CLIENT_VERSION);
@@ -282,11 +316,11 @@ bool CDBConverter::LoadBlockIndex()
         // Did we reach the end of the data to read?
         if (fRequestShutdown || strType != "blockindex")
             break;
-        COldDiskBlockIndex diskindex;
+        CDiskBlockIndex diskindex;
         ssValue >> diskindex;
 
         // Construct block index object
-        COldBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash());
+        CBlockIndex* pindexNew    = InsertBlockIndex(diskindex.GetBlockHash());
         pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
         pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
         pindexNew->nFile          = diskindex.nFile;
@@ -309,124 +343,22 @@ bool CDBConverter::LoadBlockIndex()
         if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
             pindexGenesisBlock = pindexNew;
 
+        if (!pindexNew->CheckIndex()) {
+            delete iterator;
+            return error("LoadBlockIndex() : CheckIndex failed at %d", pindexNew->nHeight);
+        }
+
         // NovaCoin: build setStakeSeen
         if (pindexNew->IsProofOfStake())
             setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
 
-        
-
         iterator->Next();
     }
     delete iterator;
-    
-    return true;
-}
 
-bool CDBConverter::BlockConversion()
-{
-    //Start here
-    if(!LoadBlockIndex())
-        return false;
-
-    vector<pair<int, COldBlockIndex*> > vSortedByHeight;
-    vSortedByHeight.reserve(mapOldBlockIndex.size());
-    BOOST_FOREACH(const PAIRTYPE(uint256, COldBlockIndex*)& item, mapOldBlockIndex)
-    {
-        COldBlockIndex* pindex = item.second;
-        vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
-    }
-    sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vSortedByHeight)
-    {
-        CBlock *newBlock = new CBlock();
-        COldBlockIndex* pindex = item.second;
-        if(pindex->GetBlockHash()== hashGenesisBlock)
-            continue;
-        ReadFromDisk(pindex, newBlock);
-        if (!ProcessBlock(newBlock))
-            return error("CBlock::ReadFromDisk() : OpenBlockFile failed");
-    }
-    
-    return true;
-    
-}
-
-bool CDBConverter::ProcessBlock(CBlock *pblock)
-{
-    // Check for duplicate
-    uint256 hash = pblock->GetHash();
-    if (mapBlockIndex.count(hash))
+    if (fRequestShutdown)
         return true;
-        //return error("ProcessBlock() : already have block %d %s", mapBlockIndex[hash]->nHeight, hash.ToString().substr(0,20).c_str());
-    // ppcoin: check proof-of-stake
-    // Limited duplicity on stake: prevents block flood attack
-    // Duplicate stake allowed only when there is orphan child block
-    //if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapOrphanBlocksByPrev.count(hash) && !Checkpoints::WantedByPendingSyncCheckpoint(hash))
-      //  return error("ProcessBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, hash.ToString().c_str());
 
-    // Preliminary checks
-    if (!pblock->CheckBlock())
-        return error("ProcessBlock() : CheckBlock FAILED");
-
-    // ppcoin: verify hash target and signature of coinstake tx
-    if (pblock->IsProofOfStake())
-    {
-        uint256 hashProofOfStake = 0;
-        if (!CheckProofOfStake(pblock->vtx[1], pblock->nBits, hashProofOfStake))
-        {
-            printf("WARNING: ProcessBlock(): check proof-of-stake failed for block %s\n", hash.ToString().c_str());
-            return false; // do not error here as we expect this during initial block download
-        }
-        //if (!mapProofOfStake.count(hash)) // add to mapProofOfStake
-          //  mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
-    }
-    return true;
-}
-
-bool CDBConverter::ReadFromDisk(COldBlockIndex *pindex, CBlock *newBlock)
-{
-   // Open history file to read
-    CAutoFile filein = CAutoFile(OpenBlockFile(pindex->nFile, pindex->nBlockPos, "rb"), SER_DISK, CLIENT_VERSION);
-    if (!filein)
-            return error("CBlock::ReadFromDisk() : OpenBlockFile failed");
-
-    // Read block
-    try {
-        filein >> *newBlock;
-    }
-    catch (std::exception &e) {
-        return error("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
-    }
-
-    if (newBlock->GetHash() != pindex->GetBlockHash())
-        return error("CBlock::ReadFromDisk() : GetHash() doesn't match index"); 
-
-    return true;
-}
-
-FILE* CDBConverter::OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode)
-{
-    string strBlockFn = strprintf("blk%04u.dat", nFile);
-    filesystem::path blockFilePath = GetDataDir() / strBlockFn;
-
-    if ((nFile < 1) || (nFile == (unsigned int) -1))
-        return NULL;
-    FILE* file = fopen(blockFilePath.string().c_str(), pszMode);
-    if (!file)
-        return NULL;
-    if (nBlockPos != 0 && !strchr(pszMode, 'a') && !strchr(pszMode, 'w'))
-    {
-        if (fseek(file, nBlockPos, SEEK_SET) != 0)
-        {
-            fclose(file);
-            return NULL;
-        }
-    }
-    return file;
-}
-
-/*void temp
-{
     // Calculate nChainTrust
     vector<pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
@@ -598,5 +530,6 @@ FILE* CDBConverter::OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, co
         CTxDB txdb;
         block.SetBestChain(txdb, pindexFork);
     }
+
+    return true;
 }
-*/
