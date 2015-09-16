@@ -190,7 +190,7 @@ void OverviewPage::setModel(WalletModel *model)
           ui->frame_5->setMaximumHeight(300);
           ui->frame_links->setVisible(true);
           connect(ui->mintWebsite, SIGNAL (clicked()), this, SLOT (mintWebsiteButtonClicked()));
-          connect(ui->mintGuardians, SIGNAL (clicked()), this, SLOT (mintGuardiansButtonClicked()));
+          connect(ui->mintYoutube, SIGNAL (clicked()), this, SLOT (mintYoutubeButtonClicked()));
           connect(ui->mintFund, SIGNAL (clicked()), this, SLOT (mintCoinFundButtonClicked()));
           connect(ui->mintChat, SIGNAL (clicked()), this, SLOT (mintIRCChatButtonClicked()));
           connect(ui->mintTwitter, SIGNAL (clicked()), this, SLOT (mintTwitterButtonClicked()));
@@ -231,7 +231,7 @@ void OverviewPage::mintWebsiteButtonClicked()
     QDesktopServices::openUrl(QUrl("http://www.mintcoinofficial.com"));
 }
 
-void OverviewPage::mintGuardiansButtonClicked()
+void OverviewPage::mintYoutubeButtonClicked()
 {
     QDesktopServices::openUrl(QUrl("http://www.mintcoinofficial.com"));
 }

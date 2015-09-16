@@ -59,7 +59,7 @@ private slots:
     void updateDisplayUnit();
     void handleTransactionClicked(const QModelIndex &index);
     void mintWebsiteButtonClicked();
-    void mintGuardiansButtonClicked();
+    void mintYoutubeButtonClicked();
     void mintIRCChatButtonClicked();
     void mintCoinFundButtonClicked();
     void mintTwitterButtonClicked();
