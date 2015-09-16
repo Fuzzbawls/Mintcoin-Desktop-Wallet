@@ -673,8 +673,23 @@ bool AppInit2()
     pcoinsdbview = new CCoinsViewDB();
     pcoinsTip = new CCoinsViewCache(*pcoinsdbview);
 
+
     if (!LoadBlockIndex())
         return InitError(_("Error loading blkindex.dat"));
+
+    filesystem::path directory = GetDataDir() / "txleveldb";
+    if(filesystem::exists(directory))
+    {    
+        // Aknowledge
+
+        // Start conversion
+        CDBConverter *db = new CDBConverter(directory);
+        if(db)
+            if(!db->BlockConversion())
+                return InitError("Failed DB Conversion");
+        //Erase old db
+        delete db;
+    }
 
     // as LoadBlockIndex can take several minutes, it's possible the user
     // requested to kill bitcoin-qt during the last operation. If so, exit.

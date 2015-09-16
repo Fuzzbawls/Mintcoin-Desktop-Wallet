@@ -12,12 +12,13 @@
 
 //#include <boost/filesystem.hpp>
 
-static leveldb::Options GetOptions() {
+leveldb::Options GetOptions(bool old) {
     leveldb::Options options;
     int nCacheSizeMB = GetArg("-dbcache", 25);
     options.block_cache = leveldb::NewLRUCache(nCacheSizeMB * 1048576);
     options.filter_policy = leveldb::NewBloomFilterPolicy(10);
-    options.compression = leveldb::kNoCompression;
+    if(!old)
+        options.compression = leveldb::kNoCompression;
     return options;
 }
 

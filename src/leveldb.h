@@ -11,6 +11,8 @@
 
 #include <boost/filesystem/path.hpp>
 
+leveldb::Options GetOptions(bool old = false);
+
 // Batch of changes queued to be written to a CLevelDB
 class CLevelDBBatch
 {
