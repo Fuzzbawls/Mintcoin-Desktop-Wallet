@@ -380,6 +380,34 @@ bool CDBConverter::ProcessBlock(CBlock *pblock)
         //if (!mapProofOfStake.count(hash)) // add to mapProofOfStake
           //  mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
     }
+
+    CBlockIndex* pcheckpoint = Checkpoints::GetLastSyncCheckpoint();
+    if (pcheckpoint && pblock->hashPrevBlock != hashBestChain && !Checkpoints::WantedByPendingSyncCheckpoint(hash))
+    {
+        // Extra checks to prevent "fill up memory by spamming with bogus blocks"
+        int64 deltaTime = pblock->GetBlockTime() - pcheckpoint->nTime;
+        CBigNum bnNewBlock;
+        bnNewBlock.SetCompact(pblock->nBits);
+        CBigNum bnRequired;
+
+        if (pblock->IsProofOfStake())
+            bnRequired.SetCompact(ComputeMinStake(GetLastBlockIndex(pcheckpoint, true)->nBits, deltaTime, pblock->nTime));
+        else
+            bnRequired.SetCompact(ComputeMinWork(GetLastBlockIndex(pcheckpoint, false)->nBits, deltaTime));
+
+        
+    }
+
+    
+    
+    // Store to disk
+    if (!pblock->AcceptBlock())
+        return error("ProcessBlock() : AcceptBlock FAILED");
+
+    
+
+    printf("ProcessBlock: ACCEPTED\n");
+
     return true;
 }
 
