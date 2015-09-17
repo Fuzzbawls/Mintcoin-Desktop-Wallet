@@ -377,8 +377,8 @@ bool CDBConverter::ProcessBlock(CBlock *pblock)
             printf("WARNING: ProcessBlock(): check proof-of-stake failed for block %s\n", hash.ToString().c_str());
             return false; // do not error here as we expect this during initial block download
         }
-        //if (!mapProofOfStake.count(hash)) // add to mapProofOfStake
-          //  mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
+        if (!mapProofOfStake.count(hash)) // add to mapProofOfStake
+            mapProofOfStake.insert(make_pair(hash, hashProofOfStake));
     }
 
     CBlockIndex* pcheckpoint = Checkpoints::GetLastSyncCheckpoint();
