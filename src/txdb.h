@@ -92,11 +92,12 @@ private:
 
     std::map<uint256, COldBlockIndex*> mapOldBlockIndex;
     COldBlockIndex *pindexGenesisBlock = NULL;
+    bool fOk;
 
 public:
     CDBConverter(boost::filesystem::path directory)
     {        
-        //activeBatch = NULL;
+        fOk = true;
 
         printf("Starting database conversion\n");
 
@@ -113,17 +114,16 @@ public:
 
     }
 
+    void Fail(bool error)
+    { fOk = error;}
+
     COldBlockIndex * InsertBlockIndex(uint256 hash);
     bool LoadBlockIndex();
     bool BlockConversion();
     bool ProcessBlock(CBlock *block);
     bool ReadFromDisk(COldBlockIndex *pindex, CBlock *newBlock);
     FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode);
-
-
-
-
-
+    
 };
 
 //////////////////////////////////////////////////////////////////////////////

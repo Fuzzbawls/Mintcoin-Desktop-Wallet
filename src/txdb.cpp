@@ -4,6 +4,7 @@
 // file license.txt or http://www.opensource.org/licenses/mit-license.php.
 
 #include <map>
+#include <queue>
 
 #include <boost/version.hpp>
 #include <boost/filesystem.hpp>
@@ -218,10 +219,10 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
         if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
             pindexGenesisBlock = pindexNew;
 
-        if (!pindexNew->CheckIndex()) {
+        /*if (!pindexNew->CheckIndex()) {
             delete pcursor;
             return error("LoadBlockIndex() : CheckIndex failed: %s", pindexNew->ToString().c_str());
-        }
+        }*/
 
         // NovaCoin: build setStakeSeen
         if (pindexNew->IsProofOfStake())
@@ -238,6 +239,19 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
 //
 // CDBConverter
 //
+
+
+void static CheckBlockThread(void* parg);
+void static AddBlockThread(void* parg);
+
+static vector<pair<int, COldBlockIndex*> > vSortedByHeight;
+static queue<vector<pair<int, CBlock*> > > blockCache;
+static int working = 0;
+static int stored = 0;
+static int tip = 0;
+static int blocksChecked = 0;
+static CCriticalSection cs_queue;
+static CDBConverter *db;
 
 COldBlockIndex *CDBConverter::InsertBlockIndex(uint256 hash)
 {
@@ -309,10 +323,6 @@ bool CDBConverter::LoadBlockIndex()
         if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
             pindexGenesisBlock = pindexNew;
 
-        // NovaCoin: build setStakeSeen
-        if (pindexNew->IsProofOfStake())
-            setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
-
         
 
         iterator->Next();
@@ -328,7 +338,10 @@ bool CDBConverter::BlockConversion()
     if(!LoadBlockIndex())
         return false;
 
-    vector<pair<int, COldBlockIndex*> > vSortedByHeight;
+    db = this;
+    stored = blocksChecked = mapBlockIndex.size();
+
+    
     vSortedByHeight.reserve(mapOldBlockIndex.size());
     BOOST_FOREACH(const PAIRTYPE(uint256, COldBlockIndex*)& item, mapOldBlockIndex)
     {
@@ -336,17 +349,18 @@ bool CDBConverter::BlockConversion()
         vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
     }
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vSortedByHeight)
-    {
-        CBlock *newBlock = new CBlock();
-        COldBlockIndex* pindex = item.second;
-        if(pindex->GetBlockHash()== hashGenesisBlock)
-            continue;
-        ReadFromDisk(pindex, newBlock);
-        if (!ProcessBlock(newBlock))
-            return error("CBlock::ReadFromDisk() : OpenBlockFile failed");
-    }
+    tip = vSortedByHeight.size();
+
+    // Block Checking thread
+    NewThread(CheckBlockThread, this);
     
+
+
+    // disk write thread
+    while(blockCache.size() < 2) {} // Giving the Check thread a head start
+    NewThread(AddBlockThread, NULL);
+    while(blocksChecked < vSortedByHeight.size())
+        sleep(5000); // Progrss updates here
     return true;
     
 }
@@ -363,11 +377,7 @@ bool CDBConverter::ProcessBlock(CBlock *pblock)
     // Duplicate stake allowed only when there is orphan child block
     //if (pblock->IsProofOfStake() && setStakeSeen.count(pblock->GetProofOfStake()) && !mapOrphanBlocksByPrev.count(hash) && !Checkpoints::WantedByPendingSyncCheckpoint(hash))
       //  return error("ProcessBlock() : duplicate proof-of-stake (%s, %d) for block %s", pblock->GetProofOfStake().first.ToString().c_str(), pblock->GetProofOfStake().second, hash.ToString().c_str());
-
-    // Preliminary checks
-    if (!pblock->CheckBlock())
-        return error("ProcessBlock() : CheckBlock FAILED");
-
+    
     // ppcoin: verify hash target and signature of coinstake tx
     if (pblock->IsProofOfStake())
     {
@@ -393,19 +403,13 @@ bool CDBConverter::ProcessBlock(CBlock *pblock)
         if (pblock->IsProofOfStake())
             bnRequired.SetCompact(ComputeMinStake(GetLastBlockIndex(pcheckpoint, true)->nBits, deltaTime, pblock->nTime));
         else
-            bnRequired.SetCompact(ComputeMinWork(GetLastBlockIndex(pcheckpoint, false)->nBits, deltaTime));
-
-        
+            bnRequired.SetCompact(ComputeMinWork(GetLastBlockIndex(pcheckpoint, false)->nBits, deltaTime));        
     }
 
-    
-    
     // Store to disk
     if (!pblock->AcceptBlock())
         return error("ProcessBlock() : AcceptBlock FAILED");
-
-    
-
+    stored++;
     printf("ProcessBlock: ACCEPTED\n");
 
     return true;
@@ -453,14 +457,60 @@ FILE* CDBConverter::OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, co
     return file;
 }
 
+void static CheckBlockThread(void* parg)
 {
+    // start
+    //std::shared_ptr<std::vector<T> > 
+    vector<pair<int, CBlock*> > newWork;
+    BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vSortedByHeight)
     {
+        COldBlockIndex* pindex = item.second;
 
+        if(pindex->nHeight < blocksChecked)
+            continue;
+        // Preliminary checks
+        CBlock *newBlock = new CBlock();        
+        db->ReadFromDisk(pindex, newBlock);
+        if (!newBlock->CheckBlock())
+            db->Fail(error("ProcessBlock() : CheckBlock FAILED"));
+
+        newWork.push_back(make_pair(blocksChecked, newBlock)); 
+        working++;
+        blocksChecked++;
+        if(working == 100)
         {
+            LOCK(cs_queue);
+            blockCache.push(newWork);
+            working = 0;
+            //newWork.clear();
+            vector<pair<int, CBlock*> >().swap(newWork);
         }
+        
+    }
+}
+void static AddBlockThread(void* parg)
+{
+    // start
+    while(stored < tip)
+    {
+        vector<pair<int, CBlock*> > vchunk;
+        if(!blockCache.empty())
         {
             {
+                LOCK(cs_queue);
+                vchunk = blockCache.front();
+                blockCache.pop();
             }
+            BOOST_FOREACH(const PAIRTYPE(int, CBlock*)& item, vchunk)
+            {
+                if(item.second->GetHash()== hashGenesisBlock)
+                    continue;
+                
+                if (!db->ProcessBlock(item.second))
+                    db->Fail(error("CBlock::ReadFromDisk() : OpenBlockFile failed"));
+            }
+            vchunk.clear();
         }
     }
 }
+
