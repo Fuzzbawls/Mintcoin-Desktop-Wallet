@@ -2,20 +2,24 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include "init.h"
+
 #include "txdb.h"
 #include "walletdb.h"
 #include "bitcoinrpc.h"
 #include "net.h"
-#include "init.h"
 #include "util.h"
 #include "ui_interface.h"
 #include "checkpoints.h"
+
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem/convenience.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <openssl/crypto.h>
+
 #ifdef QT_GUI
 #include <QMessageBox>
 #include <QPushButton>
@@ -721,34 +725,7 @@ bool AppInit2()
     // ********************************************************* Step 8: load wallet
 
     uiInterface.InitMessage(_("Loading wallet..."));
-    #ifdef QT_GUI
 
-    if(!filesystem::exists(GetDataDir() / "wallet.dat"))
-    {
-        QMessageBox msgBox;
-        msgBox.setText(("No Wallet Found."));
-        msgBox.setInformativeText(("Would you like to import one or create a new wallet?"));
-
-        QPushButton* import = msgBox.addButton(("Import Wallet"), QMessageBox::ActionRole);
-        QPushButton* newWallet = msgBox.addButton("Create new wallet", QMessageBox::RejectRole);
-        msgBox.exec();
-
-        if(msgBox.clickedButton()== import)
-        {
-            string wf = QFileDialog::getOpenFileName(0,"Import Wallet","/home","MintCoin Wallet(*.dat)").toStdString();
-            if(filesystem::exists(wf))
-                copy(wf,GetDataDir() / "wallet.dat");
-            else
-            {
-                QMessageBox errMsgBox;
-                errMsgBox.setText("Import failed. Creating new wallet.");
-                errMsgBox.setDefaultButton(QMessageBox::Ok);
-            }
-
-        }
-
-    }
-    #endif
     printf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun = true;
