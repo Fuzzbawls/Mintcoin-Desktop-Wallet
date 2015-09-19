@@ -221,7 +221,8 @@ HEADERS += src/qt/bitcoingui.h \
     src/qt/recurringsendentry.h \
     src/qt/recurringsendpage.h \
     src/qt/splashscreen.h \
-    src/qt/repairwalletdialog.h
+    src/qt/repairwalletdialog.h \
+    src/qt/intro.h
 
 SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/transactiontablemodel.cpp \
@@ -293,7 +294,8 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/recurringsendpage.cpp \
     src/qt/recurringsendentry.cpp \
     src/qt/splashscreen.cpp \
-    src/qt/repairwalletdialog.cpp
+    src/qt/repairwalletdialog.cpp \
+    src/qt/intro.cpp
 
 RESOURCES += \
     src/qt/bitcoin.qrc
@@ -314,7 +316,8 @@ FORMS += \
     src/qt/forms/merchants.ui \
     src/qt/forms/recurringSend.ui \
     src/qt/forms/recurringEntry.ui \
-    src/qt/forms/repairwalletdialog.ui
+    src/qt/forms/repairwalletdialog.ui \
+    src/qt/intro.ui
 
 QT += network
 
