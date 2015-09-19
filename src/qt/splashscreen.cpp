@@ -3,7 +3,6 @@
 #include "util.h"
 
 #include <QPainter>
-#undef loop /* ugh, remove this when the #define loop is gone from util.h */
 #include <QApplication>
 
 SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
@@ -36,15 +35,18 @@ SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
     QPainter pixPaint(&newPixmap);
     pixPaint.setPen(QColor(70,70,70));
     
+	// check font size and drawing with
     QFontMetrics fm = pixPaint.fontMetrics();
-
-    int versionWidth = fm.width(versionText);
     pixPaint.setFont(QFont(font, 14*fontFactor));
-#ifdef Q_OS_MAC
+    int versionWidth = fm.width(versionText);
+    if(versionWidth > 160) {
+        fontFactor = 0.75;
+    }
+
+    pixPaint.setFont(QFont(font, 14*fontFactor));
+    fm = pixPaint.fontMetrics();
+    versionWidth = fm.width(versionText);
     pixPaint.drawText(newPixmap.width()-paddingRight,paddingTop,versionText);
-#else
-    pixPaint.drawText(532-(versionWidth*1.5),paddingTop,versionText);
-#endif
 
     // draw copyright stuff
     pixPaint.setFont(QFont(font, 10*fontFactor));
