@@ -605,7 +605,7 @@ void CoinControlDialog::updateView()
     if (model && model->getOptionsModel())
         nDisplayUnit = model->getOptionsModel()->getDisplayUnit();
         
-    CTxDB txdb("r");
+    //CTxDB txdb("r");
     map<QString, vector<COutput> > mapCoins;
     model->listCoins(mapCoins);
 
