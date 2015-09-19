@@ -317,7 +317,7 @@ FORMS += \
     src/qt/forms/recurringSend.ui \
     src/qt/forms/recurringEntry.ui \
     src/qt/forms/repairwalletdialog.ui \
-    src/qt/intro.ui
+    src/qt/forms/intro.ui
 
 QT += network
 
