@@ -244,43 +244,25 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
 void static CheckBlockThread(void* parg);
 void static AddBlockThread(void* parg);
 void static CleanUpThread(void* parg);
-void static SliceUpThread(void* parg);
 
-static map<int, COldBlockIndex*> mapOldBlockIndex;
+static map<int, Transfer> mapTransfer;
 static queue<vector<pair<int, CBlock*> > > blockCache;
 static queue<vector<pair<int, CBlock*> > > usedBlockCache;
-static queue<vector<pair<int, COldBlockIndex*> > > indexCache;
-static queue<vector<pair<int, COldBlockIndex*> > > usedIndexCache;
 static bool mapEmpty = false;
 static bool complete = false;
 static int stored = 0;
-static int tip = 0;
+static int totalBlocks = 0;
 static int blocksChecked = 0;
 static CCriticalSection cs_queue;
 static CDBConverter *db;
 
-COldBlockIndex *CDBConverter::CreateBlockIndex(int height)
-{
 
-
-    map<int, COldBlockIndex*>::iterator mi;
-    /*if (mi != mapOldBlockIndex.end())
-        return (*mi).second;*/
-
-    // Create new
-    COldBlockIndex* pindexNew = new COldBlockIndex();
-    if (!pindexNew)
-        throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-    mi = mapOldBlockIndex.insert(make_pair(height, pindexNew)).first;
-
-    return pindexNew;
-}
 
 bool CDBConverter::LoadBlockIndex()
 {
     // The block index is an in-memory structure that maps hashes to on-disk
     // locations where the contents of the block can be found. Here, we scan it
-    // out of the DB and into mapOldBlockIndex.
+    // out of the DB and into mapTransfer.
     leveldb::Iterator *iterator = pdb->NewIterator(leveldb::ReadOptions());
     // Seek to start key.
     CDataStream ssStartKey(SER_DISK, CLIENT_VERSION);
@@ -307,32 +289,31 @@ bool CDBConverter::LoadBlockIndex()
             iterator->Next();
             continue;
         } 
-        uint256 hash = diskindex.GetBlockHash();
-        // Construct block index object
-        COldBlockIndex* pindexNew = CreateBlockIndex(diskindex.nHeight);
-        pindexNew->nFile          = diskindex.nFile;
-        pindexNew->nBlockPos      = diskindex.nBlockPos;
-        pindexNew->phashBlock     = &hash;
+
+        Transfer pTransfer;
+        // Construct transfer object
+        pTransfer.nFile          = diskindex.nFile;
+        pTransfer.nBlockPos      = diskindex.nBlockPos;
+
+        mapTransfer.insert(make_pair(diskindex.nHeight, pTransfer));
         
-        tip++;
+        totalBlocks++;
         iterator->Next();
     }
     delete iterator;
-    
+     
     return true;
 }
 
 bool CDBConverter::BlockConversion()
 {
+    db = this;
+    // Should be one (Genesis) on clean install
     stored = blocksChecked = mapBlockIndex.size();
-    //Start here
     if(!LoadBlockIndex())
         return false;
-
-    db = this;
-       
-    // Feeder
-    NewThread(SliceUpThread, NULL);
+    totalBlocks += stored;
+        
     // Block check thread
     NewThread(CheckBlockThread, NULL);
     
@@ -344,7 +325,7 @@ bool CDBConverter::BlockConversion()
     {
         // Progrss updates here
         sleep(100); // Sleep for now
-        if(stored == tip)
+        if(stored == totalBlocks)
             break;
     }
     return true;
@@ -401,12 +382,12 @@ bool CDBConverter::ProcessBlock(CBlock *pblock)
     return true;
 }
 
-bool CDBConverter::ReadFromDisk(COldBlockIndex *pindex, CBlock *newBlock)
+bool CDBConverter::ReadFromDisk(Transfer *pindex, CBlock *newBlock)
 {
    // Open history file to read
     CAutoFile filein = CAutoFile(OpenBlockFile(pindex->nFile, pindex->nBlockPos, "rb"), SER_DISK, CLIENT_VERSION);
     if (!filein)
-            return error("CBlock::ReadFromDisk() : OpenBlockFile failed");
+            return error("CDBConverter::ReadFromDisk() : OpenBlockFile failed");
 
     // Read block
     try {
@@ -415,9 +396,6 @@ bool CDBConverter::ReadFromDisk(COldBlockIndex *pindex, CBlock *newBlock)
     catch (std::exception &e) {
         return error("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
     }
-
-    if (newBlock->GetHash() != pindex->GetBlockHash())
-        return error("CBlock::ReadFromDisk() : GetHash() doesn't match index"); 
 
     return true;
 }
@@ -447,37 +425,34 @@ void static CheckBlockThread(void* parg)
 {
     // start
     //std::shared_ptr<std::vector<T> > 
-    bool mtWait = false;
+    //bool mtWait = false;
     int working = 0;
     vector<pair<int, CBlock*> > vNewWork;
-    vector<pair<int, COldBlockIndex*> > vOldIndex;
+    vector<pair<int, Transfer> > vIndex;
+
+    vIndex.reserve(500);
+    vNewWork.reserve(100);
     
     while(1)
     {
-        vOldIndex.reserve(500);
-        vNewWork.reserve(100);
+        
 
+        map<int, Transfer>::iterator it = mapTransfer.begin();
+        for(int i=0; i<500;i++, it++)
         {
-            LOCK(cs_queue);
-            if(indexCache.empty())
-                mtWait =true;
-            else
-            {
-                vOldIndex = indexCache.front();
-                indexCache.pop();
-            }
+            if(it == mapTransfer.end())
+                break;
+            vIndex.push_back(make_pair(it->first, it->second));
         }
 
-        if(mtWait)
-        {
-            mtWait = false;
-            sleep(1);
-            continue;
-        }
+        mapTransfer.erase(mapTransfer.begin(), it);
 
-        BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vOldIndex)
+        if(blockCache.size() >200)
+            sleep(100);
+
+        BOOST_FOREACH(PAIRTYPE(int, Transfer)& item, vIndex)
         {
-            COldBlockIndex* pindex = item.second;
+            Transfer* pindex = &item.second;
     
             if(item.first < blocksChecked)
                 continue;
@@ -497,26 +472,22 @@ void static CheckBlockThread(void* parg)
                 LOCK(cs_queue);
                 blockCache.push(vNewWork);
                 vNewWork.clear();
-
             }
         }
-        {
-            LOCK(cs_queue);
-            usedIndexCache.push(vOldIndex);
-        }
-        vector<pair<int, CBlock*> >().swap(vNewWork);
-        vector<pair<int, COldBlockIndex*> >().swap(vOldIndex);
-        if(blocksChecked == tip)
+        vIndex.clear();
+        if(blocksChecked == totalBlocks)
             break;
     }
-    mapEmpty = true;
 }
+
 void static AddBlockThread(void* parg)
 {
     // start
+    vector<pair<int, CBlock*> > vChunk;
+    vChunk.reserve(100);
+
     while(1)
-    {
-        vector<pair<int, CBlock*> > vChunk;
+    {        
         if(!blockCache.empty())
         {
             {
@@ -535,9 +506,9 @@ void static AddBlockThread(void* parg)
                 LOCK(cs_queue);
                 usedBlockCache.push(vChunk);
             }
-            vector<pair<int, CBlock*> >().swap(vChunk);
+            vChunk.clear();
         }
-        if(stored == tip)
+        if(stored == totalBlocks)
         {
             complete = true;
             break;
@@ -545,54 +516,11 @@ void static AddBlockThread(void* parg)
     }
 }
 
-void static SliceUpThread(void* parg)
-{
-    // Start
-    while(1)
-    {
-        vector<pair<int, COldBlockIndex*> > vIndex;
-        vIndex.reserve(500);
-        map<int, COldBlockIndex*>::iterator it = mapOldBlockIndex.begin();
-        for(int i=0; i<500;i++, it++)
-        {
-            if(it == mapOldBlockIndex.end())
-            {           
-                mapEmpty = true;
-                break;
-            }
-            vIndex.push_back(make_pair(it->first, it->second));
-        }
-
-        {
-            LOCK(cs_queue);
-            indexCache.push(vIndex);
-        }
-        vector<pair<int, COldBlockIndex*> >().swap(vIndex);
-        mapOldBlockIndex.erase(mapOldBlockIndex.begin(), it);
-        if(mapEmpty)
-            break;
-    }
-}
 void static CleanUpThread(void* parg)
 {
     // Start
     while(1)
     {
-        if(!usedIndexCache.empty())
-        {
-            vector<pair<int, COldBlockIndex*> > vtemp;
-            {
-                LOCK(cs_queue);
-                vtemp = usedIndexCache.front();
-                usedIndexCache.pop();
-            }
-            BOOST_FOREACH(PAIRTYPE(int, COldBlockIndex*) & it, vtemp)
-            {
-                COldBlockIndex *t = it.second;
-                delete t;
-            }vector<pair<int, COldBlockIndex*> >().swap(vtemp);
-        }
-
         if(!usedBlockCache.empty())
         {
             vector<pair<int, CBlock*> > vtemp;
@@ -607,7 +535,7 @@ void static CleanUpThread(void* parg)
                 delete t;
             }vector<pair<int, CBlock*> >().swap(vtemp);
         }
-        //sleep(10);
+        sleep(10);
         if(complete == true)
             break;
     }
