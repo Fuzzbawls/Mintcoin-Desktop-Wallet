@@ -90,7 +90,7 @@ private:
     leveldb::WriteBatch *activeBatch;
     leveldb::Options options;
 
-    std::map<uint256, COldBlockIndex*> mapOldBlockIndex;
+    
     COldBlockIndex *pindexGenesisBlock = NULL;
     bool fOk;
 
@@ -117,7 +117,7 @@ public:
     void Fail(bool error)
     { fOk = error;}
 
-    COldBlockIndex * InsertBlockIndex(uint256 hash);
+    COldBlockIndex *CreateBlockIndex(int height);
     bool LoadBlockIndex();
     bool BlockConversion();
     bool ProcessBlock(CBlock *block);

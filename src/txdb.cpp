@@ -243,32 +243,35 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
 
 void static CheckBlockThread(void* parg);
 void static AddBlockThread(void* parg);
+void static CleanUpThread(void* parg);
+void static SliceUpThread(void* parg);
 
-static vector<pair<int, COldBlockIndex*> > vSortedByHeight;
+static map<int, COldBlockIndex*> mapOldBlockIndex;
 static queue<vector<pair<int, CBlock*> > > blockCache;
-static int working = 0;
+static queue<vector<pair<int, CBlock*> > > usedBlockCache;
+static queue<vector<pair<int, COldBlockIndex*> > > indexCache;
+static queue<vector<pair<int, COldBlockIndex*> > > usedIndexCache;
+static bool mapEmpty = false;
+static bool complete = false;
 static int stored = 0;
 static int tip = 0;
 static int blocksChecked = 0;
 static CCriticalSection cs_queue;
 static CDBConverter *db;
 
-COldBlockIndex *CDBConverter::InsertBlockIndex(uint256 hash)
+COldBlockIndex *CDBConverter::CreateBlockIndex(int height)
 {
-    if (hash == 0)
-        return NULL;
 
-    // Return existing
-    map<uint256, COldBlockIndex*>::iterator mi = mapOldBlockIndex.find(hash);
-    if (mi != mapOldBlockIndex.end())
-        return (*mi).second;
+
+    map<int, COldBlockIndex*>::iterator mi;
+    /*if (mi != mapOldBlockIndex.end())
+        return (*mi).second;*/
 
     // Create new
     COldBlockIndex* pindexNew = new COldBlockIndex();
     if (!pindexNew)
         throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-    mi = mapOldBlockIndex.insert(make_pair(hash, pindexNew)).first;
-    pindexNew->phashBlock = &((*mi).first);
+    mi = mapOldBlockIndex.insert(make_pair(height, pindexNew)).first;
 
     return pindexNew;
 }
@@ -299,32 +302,19 @@ bool CDBConverter::LoadBlockIndex()
         COldDiskBlockIndex diskindex;
         ssValue >> diskindex;
 
+        if(diskindex.nHeight < stored)
+        {
+            iterator->Next();
+            continue;
+        } 
+        uint256 hash = diskindex.GetBlockHash();
         // Construct block index object
-        COldBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash());
-        pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
-        pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
+        COldBlockIndex* pindexNew = CreateBlockIndex(diskindex.nHeight);
         pindexNew->nFile          = diskindex.nFile;
         pindexNew->nBlockPos      = diskindex.nBlockPos;
-        pindexNew->nHeight        = diskindex.nHeight;
-        pindexNew->nMint          = diskindex.nMint;
-        pindexNew->nMoneySupply   = diskindex.nMoneySupply;
-        pindexNew->nFlags         = diskindex.nFlags;
-        pindexNew->nStakeModifier = diskindex.nStakeModifier;
-        pindexNew->prevoutStake   = diskindex.prevoutStake;
-        pindexNew->nStakeTime     = diskindex.nStakeTime;
-        pindexNew->hashProofOfStake = diskindex.hashProofOfStake;
-        pindexNew->nVersion       = diskindex.nVersion;
-        pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
-        pindexNew->nTime          = diskindex.nTime;
-        pindexNew->nBits          = diskindex.nBits;
-        pindexNew->nNonce         = diskindex.nNonce;
-
-        // Watch for genesis block
-        if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
-            pindexGenesisBlock = pindexNew;
-
+        pindexNew->phashBlock     = &hash;
         
-
+        tip++;
         iterator->Next();
     }
     delete iterator;
@@ -334,33 +324,29 @@ bool CDBConverter::LoadBlockIndex()
 
 bool CDBConverter::BlockConversion()
 {
+    stored = blocksChecked = mapBlockIndex.size();
     //Start here
     if(!LoadBlockIndex())
         return false;
 
     db = this;
-    stored = blocksChecked = mapBlockIndex.size();
-
+       
+    // Feeder
+    NewThread(SliceUpThread, NULL);
+    // Block check thread
+    NewThread(CheckBlockThread, NULL);
     
-    vSortedByHeight.reserve(mapOldBlockIndex.size());
-    BOOST_FOREACH(const PAIRTYPE(uint256, COldBlockIndex*)& item, mapOldBlockIndex)
-    {
-        COldBlockIndex* pindex = item.second;
-        vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
-    }
-    sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    tip = vSortedByHeight.size();
-
-    // Block Checking thread
-    NewThread(CheckBlockThread, this);
-    
-
-
     // disk write thread
-    while(blockCache.size() < 2) {} // Giving the Check thread a head start
+    while(blockCache.size() < 5) {} // giving the Check thread a head start
     NewThread(AddBlockThread, NULL);
-    while(blocksChecked < vSortedByHeight.size())
-        sleep(5000); // Progrss updates here
+    NewThread(CleanUpThread,NULL);
+    while(!fRequestShutdown)
+    {
+        // Progrss updates here
+        sleep(100); // Sleep for now
+        if(stored == tip)
+            break;
+    }
     return true;
     
 }
@@ -461,56 +447,168 @@ void static CheckBlockThread(void* parg)
 {
     // start
     //std::shared_ptr<std::vector<T> > 
-    vector<pair<int, CBlock*> > newWork;
-    BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vSortedByHeight)
+    bool mtWait = false;
+    int working = 0;
+    vector<pair<int, CBlock*> > vNewWork;
+    vector<pair<int, COldBlockIndex*> > vOldIndex;
+    
+    while(1)
     {
-        COldBlockIndex* pindex = item.second;
+        vOldIndex.reserve(500);
+        vNewWork.reserve(100);
 
-        if(pindex->nHeight < blocksChecked)
-            continue;
-        // Preliminary checks
-        CBlock *newBlock = new CBlock();        
-        db->ReadFromDisk(pindex, newBlock);
-        if (!newBlock->CheckBlock())
-            db->Fail(error("ProcessBlock() : CheckBlock FAILED"));
-
-        newWork.push_back(make_pair(blocksChecked, newBlock)); 
-        working++;
-        blocksChecked++;
-        if(working == 100)
         {
             LOCK(cs_queue);
-            blockCache.push(newWork);
-            working = 0;
-            //newWork.clear();
-            vector<pair<int, CBlock*> >().swap(newWork);
+            if(indexCache.empty())
+                mtWait =true;
+            else
+            {
+                vOldIndex = indexCache.front();
+                indexCache.pop();
+            }
         }
-        
+
+        if(mtWait)
+        {
+            mtWait = false;
+            sleep(1);
+            continue;
+        }
+
+        BOOST_FOREACH(const PAIRTYPE(int, COldBlockIndex*)& item, vOldIndex)
+        {
+            COldBlockIndex* pindex = item.second;
+    
+            if(item.first < blocksChecked)
+                continue;
+            // Preliminary checks
+            CBlock *newBlock = new CBlock();        
+            if(!db->ReadFromDisk(pindex, newBlock))
+                db->Fail(error("ProcessBlock() : ReadFromDisk FAILED"));
+            if (!newBlock->CheckBlock())
+                db->Fail(error("ProcessBlock() : CheckBlock FAILED"));
+    
+            vNewWork.push_back(make_pair(blocksChecked++, newBlock));
+            working++;
+
+            if(working == 100)
+            {
+                working = 0;
+                LOCK(cs_queue);
+                blockCache.push(vNewWork);
+                vNewWork.clear();
+
+            }
+        }
+        {
+            LOCK(cs_queue);
+            usedIndexCache.push(vOldIndex);
+        }
+        vector<pair<int, CBlock*> >().swap(vNewWork);
+        vector<pair<int, COldBlockIndex*> >().swap(vOldIndex);
+        if(blocksChecked == tip)
+            break;
     }
+    mapEmpty = true;
 }
 void static AddBlockThread(void* parg)
 {
     // start
-    while(stored < tip)
+    while(1)
     {
-        vector<pair<int, CBlock*> > vchunk;
+        vector<pair<int, CBlock*> > vChunk;
         if(!blockCache.empty())
         {
             {
                 LOCK(cs_queue);
-                vchunk = blockCache.front();
+                vChunk = blockCache.front();
                 blockCache.pop();
             }
-            BOOST_FOREACH(const PAIRTYPE(int, CBlock*)& item, vchunk)
+            BOOST_FOREACH(const PAIRTYPE(int, CBlock*)& item, vChunk)
             {
-                if(item.second->GetHash()== hashGenesisBlock)
-                    continue;
-                
+                                
                 if (!db->ProcessBlock(item.second))
                     db->Fail(error("CBlock::ReadFromDisk() : OpenBlockFile failed"));
             }
-            vchunk.clear();
+
+            {
+                LOCK(cs_queue);
+                usedBlockCache.push(vChunk);
+            }
+            vector<pair<int, CBlock*> >().swap(vChunk);
+        }
+        if(stored == tip)
+        {
+            complete = true;
+            break;
         }
     }
 }
 
+void static SliceUpThread(void* parg)
+{
+    // Start
+    while(1)
+    {
+        vector<pair<int, COldBlockIndex*> > vIndex;
+        vIndex.reserve(500);
+        map<int, COldBlockIndex*>::iterator it = mapOldBlockIndex.begin();
+        for(int i=0; i<500;i++, it++)
+        {
+            if(it == mapOldBlockIndex.end())
+            {           
+                mapEmpty = true;
+                break;
+            }
+            vIndex.push_back(make_pair(it->first, it->second));
+        }
+
+        {
+            LOCK(cs_queue);
+            indexCache.push(vIndex);
+        }
+        vector<pair<int, COldBlockIndex*> >().swap(vIndex);
+        mapOldBlockIndex.erase(mapOldBlockIndex.begin(), it);
+        if(mapEmpty)
+            break;
+    }
+}
+void static CleanUpThread(void* parg)
+{
+    // Start
+    while(1)
+    {
+        if(!usedIndexCache.empty())
+        {
+            vector<pair<int, COldBlockIndex*> > vtemp;
+            {
+                LOCK(cs_queue);
+                vtemp = usedIndexCache.front();
+                usedIndexCache.pop();
+            }
+            BOOST_FOREACH(PAIRTYPE(int, COldBlockIndex*) & it, vtemp)
+            {
+                COldBlockIndex *t = it.second;
+                delete t;
+            }vector<pair<int, COldBlockIndex*> >().swap(vtemp);
+        }
+
+        if(!usedBlockCache.empty())
+        {
+            vector<pair<int, CBlock*> > vtemp;
+            {
+                LOCK(cs_queue);
+                vtemp = usedBlockCache.front();
+                usedBlockCache.pop();
+            }
+            BOOST_FOREACH(PAIRTYPE(int, CBlock*) & it, vtemp)
+            {
+                CBlock *t = it.second;
+                delete t;
+            }vector<pair<int, CBlock*> >().swap(vtemp);
+        }
+        //sleep(10);
+        if(complete == true)
+            break;
+    }
+}
