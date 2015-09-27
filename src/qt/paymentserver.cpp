@@ -3,8 +3,15 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "paymentserver.h"
+
 #include "guiconstants.h"
+#include "guiutil.h"
+#include "optionsmodel.h"
+#include "paymentserver.h"
+#include "walletmodel.h"
+
 #include "ui_interface.h"
+#include "wallet.h"
 #include "util.h"
 
 #include <QApplication>
@@ -58,26 +65,20 @@ static QStringList savedPaymentRequests;
 bool PaymentServer::ipcSendCommandLine()
 {
     bool fResult = false;
-
-    const QStringList& args = QCoreApplication::arguments();
-    for (int i = 1; i < args.size(); i++)
-    {
-        if (!args[i].startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive))
-            continue;
-        savedPaymentRequests.append(args[i]);
-    }
-
-    foreach (const QString& arg, savedPaymentRequests)
+    foreach (const QString& r, savedPaymentRequests)
     {
         QLocalSocket* socket = new QLocalSocket();
         socket->connectToServer(ipcServerName(), QIODevice::WriteOnly);
         if (!socket->waitForConnected(BITCOIN_IPC_CONNECT_TIMEOUT))
-            return false;
+        {
+        	delete socket;
+        	return false;
+        }
 
         QByteArray block;
         QDataStream out(&block, QIODevice::WriteOnly);
         out.setVersion(QDataStream::Qt_4_0);
-        out << arg;
+        out << r;
         out.device()->seek(0);
         socket->write(block);
         socket->flush();
@@ -87,6 +88,7 @@ bool PaymentServer::ipcSendCommandLine()
         delete socket;
         fResult = true;
     }
+    
     return fResult;
 }
 

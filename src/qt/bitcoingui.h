@@ -1,7 +1,12 @@
+// Copyright (c) 2011-2013 The Bitcoin developers
+// Distributed under the MIT/X11 software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #ifndef BITCOINGUI_H
 #define BITCOINGUI_H
 
 #include <QMainWindow>
+#include <QMap>
 #include <QSystemTrayIcon>
 
 #include "util.h" // for uint64
@@ -20,6 +25,7 @@ class Notificator;
 class RPCConsole;
 
 QT_BEGIN_NAMESPACE
+class QAction;
 class QLabel;
 class QLineEdit;
 class QTableView;
@@ -122,6 +128,11 @@ private:
     void createToolBars();
     /** Create system tray (notification) icon */
     void createTrayIcon();
+
+    /** Connect core signals to GUI client */
+    void subscribeToCoreSignals();
+    /** Disconnect core signals from GUI client */
+    void unsubscribeFromCoreSignals();
 
 public slots:
     /** Set number of connections shown in the UI */

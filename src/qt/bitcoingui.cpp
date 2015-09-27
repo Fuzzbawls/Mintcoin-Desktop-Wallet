@@ -1,10 +1,9 @@
-/*
- * Qt4 bitcoin GUI.
- *
- * W.J. van der Laan 2011-2012
- * The Bitcoin Developers 2011-2012
- */
+// Copyright (c) 2011-2013 The Bitcoin developers
+// Distributed under the MIT/X11 software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "bitcoingui.h"
+
 #include "transactiontablemodel.h"
 #include "addressbookpage.h"
 #include "merchantpage.h"
@@ -30,6 +29,8 @@
 #include "rpcconsole.h"
 #include "wallet.h"
 #include "bitcoinrpc.h"
+#include "init.h"
+#include "ui_interface.h"
 
 #ifdef Q_OS_MAC
 #include "macdockiconhandler.h"
@@ -226,6 +227,9 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     gotoOverviewPage();
     statusBar()->showMessage(tr("Remember to make an external backup of your wallet"));
     QTimer::singleShot(30000, this, SLOT(noMessage()));
+
+    // Subscribe to notifications from core
+    subscribeToCoreSignals();
 }
 
 void BitcoinGUI::noMessage()
@@ -235,6 +239,9 @@ void BitcoinGUI::noMessage()
 
 BitcoinGUI::~BitcoinGUI()
 {
+    // Unsubscribe from notifications from core
+    unsubscribeFromCoreSignals();
+    GUIUtil::saveWindowGeometry("nWindow", this);
     if(trayIcon) // Hide tray icon, as deleting will let it linger until quit (on Ubuntu)
         trayIcon->hide();
 #ifdef Q_OS_MAC
@@ -1167,4 +1174,30 @@ void BitcoinGUI::updateMintingWeights()
 
         nNetworkWeight = GetPoSKernelPS();
     }
+}
+
+static bool ThreadSafeMessageBox(BitcoinGUI *gui, const std::string& message, const std::string& caption, unsigned int style)
+{
+    bool modal = (style & CClientUIInterface::MODAL);
+    bool ret = false;
+    // In case of modal message, use blocking connection to wait for user to click a button
+    QMetaObject::invokeMethod(gui, "message",
+                               modal ? GUIUtil::blockingGUIThreadConnection() : Qt::QueuedConnection,
+                               Q_ARG(QString, QString::fromStdString(caption)),
+                               Q_ARG(QString, QString::fromStdString(message)),
+                               Q_ARG(unsigned int, style),
+                               Q_ARG(bool*, &ret));
+    return ret;
+}
+
+void BitcoinGUI::subscribeToCoreSignals()
+{
+    // Connect signals to client
+    uiInterface.ThreadSafeMessageBox.connect(boost::bind(ThreadSafeMessageBox, this, _1, _2, _3));
+}
+
+void BitcoinGUI::unsubscribeFromCoreSignals()
+{
+    // Disconnect signals from client
+    uiInterface.ThreadSafeMessageBox.disconnect(boost::bind(ThreadSafeMessageBox, this, _1, _2, _3));
 }
