@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIconFile</key>
+	<string>MintCoin.icns</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleGetInfoString</key>
+	<string>v2.1.0.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleExecutable</key>
+	<string>MintCoin-Qt</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.mintcoin.MintCoin-Qt</string>
+	<key>LSAppNapIsDisabled</key>
+	<string>True</string>
+	<key>LSAppNapIsDisabled</key>
+	<string>True</string>
+	<key>CFBundleURLTypes</key>
+        <array>
+          <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLName</key>
+            <string>com.mintcoin.MintCoinPayment</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+              <string>mintcoin</string>
+            </array>
+          </dict>
+        </array>
+</dict>
+</plist>
