@@ -3,11 +3,12 @@
 #include "util.h"
 #include
 
-#include <QPainter>
 #include <QApplication>
+#include <QPainter>
+#include <QDesktopWidget>
 
-SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
-    QSplashScreen(pixmap, f)
+SplashScreen::SplashScreen(Qt::WindowFlags f) :
+    QWidget(0, f), curAlignment(0)
 {
     // set reference point, paddings
     int paddingRight            = 120;
@@ -22,7 +23,7 @@ SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
 #endif
 
     // define text to place
-    QString titleText       = QString(QApplication::applicationName()).replace(QString("-testnet"), QString(""), Qt::CaseSensitive); // cut of testnet, place it as single object further down
+    QString titleText       = tr("MintCoin");
     QString versionText     = QString("Version %1 ").arg(QString::fromStdString(FormatFullVersion()));
     QString copyrightText1   = QChar(0xA9)+QString(" 2009-%1 ").arg(COPYRIGHT_YEAR) + QString(tr("The Bitcoin developers"));
     QString copyrightText2   = QChar(0xA9)+QString(" 2011-%1 ").arg(COPYRIGHT_YEAR) + QString(tr("The MintCoin developers"));
@@ -30,8 +31,7 @@ SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
     QString font            = "Arial";
 
     // load the bitmap for writing some text over it
-    QPixmap newPixmap;
-    newPixmap     = QPixmap(":/images/splash");
+    pixmap     = QPixmap(":/images/splash");
 
     QPainter pixPaint(&newPixmap);
     pixPaint.setPen(QColor(70,70,70));
@@ -47,23 +47,33 @@ SplashScreen::SplashScreen(const QPixmap &pixmap, Qt::WindowFlags f) :
     pixPaint.setFont(QFont(font, 14*fontFactor));
     fm = pixPaint.fontMetrics();
     versionWidth = fm.width(versionText);
-    pixPaint.drawText(newPixmap.width()-paddingRight,paddingTop,versionText);
+    pixPaint.drawText(pixmap.width()-paddingRight,paddingTop,versionText);
 
     // draw copyright stuff
     pixPaint.setFont(QFont(font, 10*fontFactor));
     int copy1width = fm.width(copyrightText1);
     int copy2width = fm.width(copyrightText2);
 #ifdef Q_OS_MAC
-    pixPaint.drawText(newPixmap.width()-(copy1width*2)+(copy1width/2),newPixmap.height()-line2,copyrightText1);
-    pixPaint.drawText(newPixmap.width()-(copy2width*2)+(copy2width/2)+15,newPixmap.height()-line1,copyrightText2);
+    pixPaint.drawText(pixmap.width()-(copy1width*2)+(copy1width/2),pixmap.height()-line2,copyrightText1);
+    pixPaint.drawText(pixmap.width()-(copy2width*2)+(copy2width/2)+15,pixmap.height()-line1,copyrightText2);
 #else
-    pixPaint.drawText((532/2)-(copy1width/2),newPixmap.height()-line2,copyrightText1);
-    pixPaint.drawText((532/2)-(copy2width/2),newPixmap.height()-line1,copyrightText2);
+    pixPaint.drawText((532/2)-(copy1width/2),pixmap.height()-line2,copyrightText1);
+    pixPaint.drawText((532/2)-(copy2width/2),pixmap.height()-line1,copyrightText2);
 #endif
 
     pixPaint.end();
 
-    this->setPixmap(newPixmap);
+    // Set window title
+    //if(isTestNet)
+    //    setWindowTitle(titleText + " " + testnetAddText);
+    //else
+        setWindowTitle(titleText);
+
+    // Resize window and move to center of desktop, disallow resizing
+    QRect r(QPoint(), pixmap.size());
+    resize(r.size());
+    setFixedSize(r.size());
+    move(QApplication::desktop()->screenGeometry().center() - r.center());
 
     subscribeToCoreSignals();
 }
@@ -75,7 +85,8 @@ SplashScreen::~SplashScreen()
 
 void SplashScreen::slotFinish(QWidget *mainWin)
 {
-    finish(mainWin);
+    hide();
+    deleteLater();
 }
 
 static void InitMessage(SplashScreen *splash, const std::string &message)
@@ -97,4 +108,21 @@ void SplashScreen::unsubscribeFromCoreSignals()
 {
     // Disconnect signals from client
     uiInterface.InitMessage.disconnect(boost::bind(InitMessage, this, _1));
+}
+
+void SplashScreen::showMessage(const QString &message, int alignment, const QColor &color)
+{
+    curMessage = message;
+    curAlignment = alignment;
+    curColor = color;
+    update();
+}
+
+void SplashScreen::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    painter.drawPixmap(0, 0, pixmap);
+    QRect r = rect().adjusted(5, 5, -5, -5);
+    painter.setPen(curColor);
+    painter.drawText(r, curAlignment, curMessage);
 }

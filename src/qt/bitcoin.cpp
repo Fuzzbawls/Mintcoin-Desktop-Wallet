@@ -160,7 +160,7 @@ public:
     /// Request core initialization
     void requestInitialize();
     /// Request core shutdown
-    void startShutdown();
+    void requestShutdown()();
 
     /// Get process return value
     int getReturnValue() { return returnValue; }
@@ -275,14 +275,13 @@ void BitcoinApplication::createWindow()
     //guiref = &window;
 
     QTimer* pollShutdownTimer = new QTimer(window);
-    connect(pollShutdownTimer, SIGNAL(timeout()), window, SLOT(startShutdown()));
+    connect(pollShutdownTimer, SIGNAL(timeout()), window, SLOT(requestShutdown()));
     pollShutdownTimer->start(200);
 }
 
 void BitcoinApplication::createSplashScreen()
 {
-    SplashScreen *splash = new SplashScreen(QPixmap(), 0);
-    splash->setAttribute(Qt::WA_DeleteOnClose);
+    SplashScreen *splash = new SplashScreen(0);
     splash->show();
     connect(this, SIGNAL(splashFinished(QWidget*)), splash, SLOT(slotFinish(QWidget*)));
 }
@@ -312,7 +311,7 @@ void BitcoinApplication::requestInitialize()
     emit requestedInitialize();
 }
 
-void BitcoinApplication::startShutdown()
+void BitcoinApplication::requestShutdown()
 {
     printf("Requesting shutdown\n");
     window->hide();
@@ -354,8 +353,6 @@ void BitcoinApplication::initializeResult(int retval)
         //PaymentServer::LoadRootCAs();
         //paymentServer->setOptionsModel(optionsModel);
 
-        emit splashFinished(window);
-
         clientModel = new ClientModel(optionsModel);
         window->setClientModel(clientModel);
 
@@ -365,6 +362,7 @@ void BitcoinApplication::initializeResult(int retval)
 
             //window->addWallet("~Default", walletModel);
             //window->setCurrentWallet("~Default");
+            window->setWalletModel(walletModel);
 
             connect(walletModel, SIGNAL(coinsSent(CWallet*,SendCoinsRecipient,QByteArray)),
                              paymentServer, SLOT(fetchPaymentACK(CWallet*,const SendCoinsRecipient&,QByteArray)));
@@ -379,6 +377,7 @@ void BitcoinApplication::initializeResult(int retval)
         {
             window->show();
         }
+        emit splashFinished(window);
 
         // Now that initialization/startup is done, process any command-line
         // bitcoin: URIs or payment requests:
@@ -536,7 +535,7 @@ int main(int argc, char *argv[])
         app.createWindow();
         app.requestInitialize();
         app.exec();
-        app.startShutdown();
+        app.requestShutdown();
         app.exec();
     } catch (std::exception& e) {
         PrintExceptionContinue(&e, "Runaway exception");
