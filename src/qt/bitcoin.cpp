@@ -160,7 +160,7 @@ public:
     /// Request core initialization
     void requestInitialize();
     /// Request core shutdown
-    void requestShutdown()();
+    void requestShutdown();
 
     /// Get process return value
     int getReturnValue() { return returnValue; }

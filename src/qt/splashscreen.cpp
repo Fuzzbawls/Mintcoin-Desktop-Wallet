@@ -1,7 +1,9 @@
 #include "splashscreen.h"
 #include "clientversion.h"
 #include "util.h"
-#include
+#include "init.h"
+#include "version.h"
+#include "wallet.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -33,7 +35,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f) :
     // load the bitmap for writing some text over it
     pixmap     = QPixmap(":/images/splash");
 
-    QPainter pixPaint(&newPixmap);
+    QPainter pixPaint(&pixmap);
     pixPaint.setPen(QColor(70,70,70));
     
 	// check font size and drawing with
