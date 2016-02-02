@@ -76,7 +76,7 @@ script: |
     make $MAKEOPTS install
     #
     cd $INSTALLPREFIX
-    
+   
     # as zip stores file timestamps, use faketime to intercept stat calls to set dates for all files to reference date
     export LD_PRELOAD=/usr/lib/faketime/libfaketime.so.1
     zip -r $OUTDIR/qt-win${BITS}-5.2.0-gitian-r2.zip *
