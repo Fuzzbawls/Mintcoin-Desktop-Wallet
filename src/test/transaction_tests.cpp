@@ -1,16 +1,26 @@
+// Copyright (c) 2011-2014 The Bitcoin Core developers
+// Distributed under the MIT/X11 software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include "data/tx_invalid.json.h"
+#include "data/tx_valid.json.h"
+
+#include "key.h"
+#include "keystore.h"
+#include "main.h"
+#include "script.h"
+
 #include <map>
 #include <string>
+
 #include <boost/test/unit_test.hpp>
 #include "json/json_spirit_writer_template.h"
-
-#include "main.h"
-#include "wallet.h"
 
 using namespace std;
 using namespace json_spirit;
 
 // In script_tests.cpp
-extern Array read_json(const std::string& filename);
+extern Array read_json(const std::string& jsondata);
 extern CScript ParseScript(string s);
 
 BOOST_AUTO_TEST_SUITE(transaction_tests)
@@ -22,7 +32,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
     // Inner arrays are either [ "comment" ]
     // or [[[prevout hash, prevout index, prevout scriptPubKey], [input 2], ...],"], serializedTransaction, enforceP2SH
     // ... where all scripts are stringified scripts.
-    Array tests = read_json("tx_valid.json");
+    Array tests = read_json(std::string(json_tests::tx_valid, json_tests::tx_valid + sizeof(json_tests::tx_valid)));
 
     BOOST_FOREACH(Value& tv, tests)
     {
@@ -66,7 +76,9 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             CTransaction tx;
             stream >> tx;
 
-                BOOST_CHECK_MESSAGE(tx.CheckTransaction(), strTest);
+            CValidationState state;
+            BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
+            BOOST_CHECK(state.IsValid());
 
             for (unsigned int i = 0; i < tx.vin.size(); i++)
             {
@@ -76,7 +88,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
                     break;
                 }
 
-                BOOST_CHECK_MESSAGE(VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout], tx, i, test[2].get_bool(), 0), strTest);
+                BOOST_CHECK_MESSAGE(VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout], tx, i, test[2].get_bool() ? SCRIPT_VERIFY_P2SH : SCRIPT_VERIFY_NONE, 0), strTest);
             }
         }
     }
@@ -89,7 +101,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
     // Inner arrays are either [ "comment" ]
     // or [[[prevout hash, prevout index, prevout scriptPubKey], [input 2], ...],"], serializedTransaction, enforceP2SH
     // ... where all scripts are stringified scripts.
-    Array tests = read_json("tx_invalid.json");
+    Array tests = read_json(std::string(json_tests::tx_invalid, json_tests::tx_invalid + sizeof(json_tests::tx_invalid)));
 
     BOOST_FOREACH(Value& tv, tests)
     {
@@ -133,7 +145,8 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             CTransaction tx;
             stream >> tx;
 
-            fValid = tx.CheckTransaction();
+            CValidationState state;
+            fValid = CheckTransaction(tx, state) && state.IsValid();
 
             for (unsigned int i = 0; i < tx.vin.size() && fValid; i++)
             {
@@ -143,7 +156,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
                     break;
                 }
 
-                fValid = VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout], tx, i, test[2].get_bool(), 0);
+                fValid = VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout], tx, i, test[2].get_bool() ? SCRIPT_VERIFY_P2SH : SCRIPT_VERIFY_NONE, 0);
             }
 
             BOOST_CHECK_MESSAGE(!fValid, strTest);
@@ -159,11 +172,12 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
     CDataStream stream(vch, SER_DISK, CLIENT_VERSION);
     CTransaction tx;
     stream >> tx;
-    BOOST_CHECK_MESSAGE(tx.CheckTransaction(), "Simple deserialized transaction should be valid.");
+    CValidationState state;
+    BOOST_CHECK_MESSAGE(CheckTransaction(tx, state) && state.IsValid(), "Simple deserialized transaction should be valid.");
 
     // Check that duplicate txins fail
     tx.vin.push_back(tx.vin[0]);
-    BOOST_CHECK_MESSAGE(!tx.CheckTransaction(), "Transaction with duplicate txins should be invalid.");
+    BOOST_CHECK_MESSAGE(!CheckTransaction(tx, state) || !state.IsValid(), "Transaction with duplicate txins should be invalid.");
 }
 
 //
@@ -173,7 +187,7 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
 // paid to a TX_PUBKEYHASH.
 //
 static std::vector<CTransaction>
-SetupDummyInputs(CBasicKeyStore& keystoreRet, MapPrevTx& inputsRet)
+SetupDummyInputs(CBasicKeyStore& keystoreRet, CCoinsView & coinsRet)
 {
     std::vector<CTransaction> dummyTransactions;
     dummyTransactions.resize(2);
@@ -192,14 +206,14 @@ SetupDummyInputs(CBasicKeyStore& keystoreRet, MapPrevTx& inputsRet)
     dummyTransactions[0].vout[0].scriptPubKey << key[0].GetPubKey() << OP_CHECKSIG;
     dummyTransactions[0].vout[1].nValue = 50*CENT;
     dummyTransactions[0].vout[1].scriptPubKey << key[1].GetPubKey() << OP_CHECKSIG;
-    inputsRet[dummyTransactions[0].GetHash()] = make_pair(CTxIndex(), dummyTransactions[0]);
+    coinsRet.SetCoins(dummyTransactions[0].GetHash(), CCoins(dummyTransactions[0], 0));
 
     dummyTransactions[1].vout.resize(2);
     dummyTransactions[1].vout[0].nValue = 21*CENT;
     dummyTransactions[1].vout[0].scriptPubKey.SetDestination(key[2].GetPubKey().GetID());
     dummyTransactions[1].vout[1].nValue = 22*CENT;
     dummyTransactions[1].vout[1].scriptPubKey.SetDestination(key[3].GetPubKey().GetID());
-    inputsRet[dummyTransactions[1].GetHash()] = make_pair(CTxIndex(), dummyTransactions[1]);
+    coinsRet.SetCoins(dummyTransactions[1].GetHash(), CCoins(dummyTransactions[1], 0));
 
     return dummyTransactions;
 }
@@ -207,8 +221,9 @@ SetupDummyInputs(CBasicKeyStore& keystoreRet, MapPrevTx& inputsRet)
 BOOST_AUTO_TEST_CASE(test_Get)
 {
     CBasicKeyStore keystore;
-    MapPrevTx dummyInputs;
-    std::vector<CTransaction> dummyTransactions = SetupDummyInputs(keystore, dummyInputs);
+    CCoinsView coinsDummy;
+    CCoinsViewCache coins(coinsDummy);
+    std::vector<CTransaction> dummyTransactions = SetupDummyInputs(keystore, coins);
 
     CTransaction t1;
     t1.vin.resize(3);
@@ -225,40 +240,75 @@ BOOST_AUTO_TEST_CASE(test_Get)
     t1.vout[0].nValue = 90*CENT;
     t1.vout[0].scriptPubKey << OP_1;
 
-    BOOST_CHECK(t1.AreInputsStandard(dummyInputs));
-    BOOST_CHECK_EQUAL(t1.GetValueIn(dummyInputs), (50+21+22)*CENT);
+    BOOST_CHECK(AreInputsStandard(t1, coins));
+    BOOST_CHECK_EQUAL(coins.GetValueIn(t1), (50+21+22)*CENT);
 
     // Adding extra junk to the scriptSig should make it non-standard:
     t1.vin[0].scriptSig << OP_11;
-    BOOST_CHECK(!t1.AreInputsStandard(dummyInputs));
+    BOOST_CHECK(!AreInputsStandard(t1, coins));
 
     // ... as should not having enough:
     t1.vin[0].scriptSig = CScript();
-    BOOST_CHECK(!t1.AreInputsStandard(dummyInputs));
+    BOOST_CHECK(!AreInputsStandard(t1, coins));
 }
 
-BOOST_AUTO_TEST_CASE(test_GetThrow)
+BOOST_AUTO_TEST_CASE(test_IsStandard)
 {
+    LOCK(cs_main);
     CBasicKeyStore keystore;
-    MapPrevTx dummyInputs;
-    std::vector<CTransaction> dummyTransactions = SetupDummyInputs(keystore, dummyInputs);
+    CCoinsView coinsDummy;
+    CCoinsViewCache coins(coinsDummy);
+    std::vector<CTransaction> dummyTransactions = SetupDummyInputs(keystore, coins);
 
-    MapPrevTx missingInputs;
+    CTransaction t;
+    t.vin.resize(1);
+    t.vin[0].prevout.hash = dummyTransactions[0].GetHash();
+    t.vin[0].prevout.n = 1;
+    t.vin[0].scriptSig << std::vector<unsigned char>(65, 0);
+    t.vout.resize(1);
+    t.vout[0].nValue = 90*CENT;
+    CKey key;
+    key.MakeNewKey(true);
+    t.vout[0].scriptPubKey.SetDestination(key.GetPubKey().GetID());
 
-    CTransaction t1;
-    t1.vin.resize(3);
-    t1.vin[0].prevout.hash = dummyTransactions[0].GetHash();
-    t1.vin[0].prevout.n = 0;
-    t1.vin[1].prevout.hash = dummyTransactions[1].GetHash();;
-    t1.vin[1].prevout.n = 0;
-    t1.vin[2].prevout.hash = dummyTransactions[1].GetHash();;
-    t1.vin[2].prevout.n = 1;
-    t1.vout.resize(2);
-    t1.vout[0].nValue = 90*CENT;
-    t1.vout[0].scriptPubKey << OP_1;
+    string reason;
+    BOOST_CHECK(IsStandardTx(t, reason));
 
-    BOOST_CHECK_THROW(t1.AreInputsStandard(missingInputs), runtime_error);
-    BOOST_CHECK_THROW(t1.GetValueIn(missingInputs), runtime_error);
+    t.vout[0].nValue = 501; // dust
+    BOOST_CHECK(!IsStandardTx(t, reason));
+
+    t.vout[0].nValue = 601; // not dust
+    BOOST_CHECK(IsStandardTx(t, reason));
+
+    t.vout[0].scriptPubKey = CScript() << OP_1;
+    BOOST_CHECK(!IsStandardTx(t, reason));
+
+    // 40-byte TX_NULL_DATA (standard)
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38");
+    BOOST_CHECK(IsStandardTx(t, reason));
+
+    // 41-byte TX_NULL_DATA (non-standard)
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3800");
+    BOOST_CHECK(!IsStandardTx(t, reason));
+
+    // TX_NULL_DATA w/o PUSHDATA
+    t.vout.resize(1);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    BOOST_CHECK(IsStandardTx(t, reason));
+
+    // Only one TX_NULL_DATA permitted in all cases
+    t.vout.resize(2);
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38");
+    t.vout[1].scriptPubKey = CScript() << OP_RETURN << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38");
+    BOOST_CHECK(!IsStandardTx(t, reason));
+
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38");
+    t.vout[1].scriptPubKey = CScript() << OP_RETURN;
+    BOOST_CHECK(!IsStandardTx(t, reason));
+
+    t.vout[0].scriptPubKey = CScript() << OP_RETURN;
+    t.vout[1].scriptPubKey = CScript() << OP_RETURN;
+    BOOST_CHECK(!IsStandardTx(t, reason));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
