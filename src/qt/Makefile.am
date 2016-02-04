@@ -222,6 +222,8 @@ BITCOIN_QT_H = \
 RES_ICONS = \
   res/icons/add.png \
   res/icons/MintCoin.png \
+  res/icons/MintCoin-16.png \
+  res/icons/MintCoin-128.png \
   res/icons/address-book.png \
   res/icons/MintCoin.ico \
   res/icons/clock1.png \
@@ -254,6 +256,7 @@ RES_ICONS = \
   res/icons/synced.png \
   res/icons/transaction0.png \
   res/icons/transaction2.png \
+  res/icons/mining.png \
   res/icons/tx_inout.png \
   res/icons/tx_input.png \
   res/icons/tx_output.png \
@@ -317,7 +320,8 @@ endif
 
 RES_IMAGES = \
   res/images/about.png \
-  res/images/splash.png
+  res/images/splash.png \
+  res/images/wallet.png
 
 RES_MOVIES = res/movies/update_spinner.mng
 
