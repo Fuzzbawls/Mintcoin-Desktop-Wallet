@@ -138,7 +138,7 @@ QT_MOC_CPP = \
   moc_transactionfilterproxy.cpp \
   moc_transactiontablemodel.cpp \
   moc_transactionview.cpp \
-  moc_utilitydialog.cpp \  
+  moc_utilitydialog.cpp \
   moc_walletframe.cpp \
   moc_walletmodel.cpp \
   moc_walletview.cpp \
@@ -338,24 +338,23 @@ BUILT_SOURCES = $(nodist_libbitcoinqt_a_SOURCES)
 $(QT_MOC): $(PROTOBUF_H)
 $(QT_MOC_CPP): $(PROTOBUF_H)
 
-if TARGET_DARWIN
-  libbitcoinqt_a_SOURCES += $(BITCOIN_MM)
-endif
-if TARGET_WINDOWS
-  libbitcoinqt_a_SOURCES += $(BITCOIN_RC)
-endif
-#
-
 # bitcoin-qt binary #
 MintCoin_qt_CPPFLAGS = $(AM_CPPFLAGS) $(QT_INCLUDES) \
   -I$(top_srcdir)/src/qt/forms
 MintCoin_qt_SOURCES = bitcoin.cpp
+if TARGET_DARWIN
+  MintCoin_qt_SOURCES += $(BITCOIN_MM)
+endif
+if TARGET_WINDOWS
+  MintCoin_qt_SOURCES += $(BITCOIN_RC)
+endif
 MintCoin_qt_LDADD = libbitcoinqt.a $(LIBBITCOIN_SERVER)
 if ENABLE_WALLET
 MintCoin_qt_LDADD += $(LIBBITCOIN_WALLET)
 endif
 MintCoin_qt_LDADD += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBLEVELDB) $(LIBMEMENV) \
   $(BOOST_LIBS) $(QT_LIBS) $(QT_DBUS_LIBS) $(QR_LIBS) $(PROTOBUF_LIBS) $(BDB_LIBS)
+MintCoin_qt_LDFLAGS = $(QT_LDFLAGS)
 
 # forms/foo.h -> forms/ui_foo.h
 QT_FORMS_H=$(join $(dir $(QT_FORMS_UI)),$(addprefix ui_, $(notdir $(QT_FORMS_UI:.ui=.h))))
