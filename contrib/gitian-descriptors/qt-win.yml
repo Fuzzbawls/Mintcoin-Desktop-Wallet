@@ -48,7 +48,7 @@ script: |
     #
     # Need mingw-compiled openssl from bitcoin-deps:
     cd $DEPSDIR
-    unzip $INDIR/bitcoin-deps-win${BITS}-gitian-r14.zip
+    unzip $INDIR/mintcoin-deps-win${BITS}-gitian-r14.zip
     #
     cd $BUILDDIR
     #
