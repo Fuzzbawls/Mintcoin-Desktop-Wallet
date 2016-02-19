@@ -1,36 +1,43 @@
 ---
-name: "mintcoin-win-0.13"
+name: "mintcoin-osx-0.13"
 enable_cache: true
 suites:
 - "trusty"
 architectures:
 - "amd64"
 packages: 
+- "ca-certificates"
 - "g++"
 - "git-core"
 - "pkg-config"
 - "autoconf"
+- "librsvg2-bin"
+- "libtiff-tools"
 - "libtool"
 - "automake"
 - "faketime"
 - "bsdmainutils"
-- "mingw-w64"
-- "g++-mingw-w64"
-- "nsis"
-- "zip"
-- "ca-certificates"
+- "cmake"
+- "imagemagick"
+- "libcap-dev"
+- "libz-dev"
+- "libbz2-dev"
 - "python"
+- "python-dev"
+- "python-setuptools"
+- "fonts-tuffy"
 reference_datetime: "2016-01-01 00:00:00"
 remotes:
 - "url": "https://github.com/bitcoin/bitcoin.git"
   "dir": "mintcoin"
-files: []
+files:
+- "MacOSX10.9.sdk.tar.gz"
 script: |
   WRAP_DIR=$HOME/wrapped
-  HOSTS="x86_64-w64-mingw32 i686-w64-mingw32"
-  CONFIGFLAGS="--enable-reduce-exports"
-  FAKETIME_HOST_PROGS="g++ ar ranlib nm windres strip"
-  FAKETIME_PROGS="date makensis zip"
+  HOSTS="x86_64-apple-darwin11"
+  CONFIGFLAGS="--enable-reduce-exports GENISOIMAGE=$WRAP_DIR/genisoimage"
+  FAKETIME_HOST_PROGS=""
+  FAKETIME_PROGS="ar ranlib date dmg genisoimage"
 
   export QT_RCC_TEST=1
   export GZIP="-9n"
@@ -43,6 +50,8 @@ script: |
     export BASE_CACHE=${GBUILD_PACKAGE_CACHE}
     mkdir -p ${BASE_CACHE} ${SOURCES_PATH}
   fi
+
+  export ZERO_AR_DATE=1
 
   # Create global faketime wrappers
   for prog in ${FAKETIME_PROGS}; do
@@ -65,34 +74,14 @@ script: |
         chmod +x ${WRAP_DIR}/${i}-${prog}
     done
   done
-
-  # Create per-host linker wrapper
-  # This is only needed for trusty, as the mingw linker leaks a few bytes of
-  # heap, causing non-determinism. See discussion in https://github.com/bitcoin/bitcoin/pull/6900
-  for i in $HOSTS; do
-    mkdir -p ${WRAP_DIR}/${i}
-    for prog in collect2; do
-        echo '#!/bin/bash' > ${WRAP_DIR}/${i}/${prog}
-        REAL=$(${i}-gcc -print-prog-name=${prog})
-        echo "export MALLOC_PERTURB_=255" >> ${WRAP_DIR}/${i}/${prog}
-        echo "${REAL} \$@" >> $WRAP_DIR/${i}/${prog}
-        chmod +x ${WRAP_DIR}/${i}/${prog}
-    done
-    for prog in gcc g++; do
-        echo '#!/bin/bash' > ${WRAP_DIR}/${i}-${prog}
-        echo "REAL=\`which -a ${i}-${prog} | grep -v ${WRAP_DIR}/${i}-${prog} | head -1\`" >> ${WRAP_DIR}/${i}-${prog}
-        echo 'export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1' >> ${WRAP_DIR}/${i}-${prog}
-        echo "export FAKETIME=\"${REFERENCE_DATETIME}\"" >> ${WRAP_DIR}/${i}-${prog}
-        echo "export COMPILER_PATH=${WRAP_DIR}/${i}" >> ${WRAP_DIR}/${i}-${prog}
-        echo "\$REAL \$@" >> $WRAP_DIR/${i}-${prog}
-        chmod +x ${WRAP_DIR}/${i}-${prog}
-    done
-  done
-
   export PATH=${WRAP_DIR}:${PATH}
 
   cd mintcoin
   BASEPREFIX=`pwd`/depends
+
+  mkdir -p ${BASEPREFIX}/SDKs
+  tar -C ${BASEPREFIX}/SDKs -xf ${BUILD_DIR}/MacOSX10.9.sdk.tar.gz
+
   # Build dependencies for each host
   for i in $HOSTS; do
     make ${MAKEOPTS} -C ${BASEPREFIX} HOST="${i}"
@@ -110,18 +99,11 @@ script: |
   pushd temp
   tar xf ../$SOURCEDIST
   find mintcoin-* | sort | tar --no-recursion --mode='u+rw,go+r-w,a+X' --owner=0 --group=0 -c -T - | gzip -9n > ../$SOURCEDIST
-  mkdir -p $OUTDIR/src
-  cp ../$SOURCEDIST $OUTDIR/src
   popd
 
   ORIGPATH="$PATH"
   # Extract the release tarball into a dir for each host and build
   for i in ${HOSTS}; do
-    if [ "$i" == "i686-w64-mingw32" ]; then
-        SSE="-msse2"
-    else
-        SSE=""
-    fi
     export PATH=${BASEPREFIX}/${i}/native/bin:${ORIGPATH}
     mkdir -p distsrc-${i}
     cd distsrc-${i}
@@ -129,20 +111,35 @@ script: |
     mkdir -p ${INSTALLPATH}
     tar --strip-components=1 -xf ../$SOURCEDIST
 
-    ./configure CXXFLAGS="${SSE}" --prefix=${BASEPREFIX}/${i} --bindir=${INSTALLPATH}/bin --includedir=${INSTALLPATH}/include --libdir=${INSTALLPATH}/lib --disable-ccache --disable-maintainer-mode --disable-dependency-tracking ${CONFIGFLAGS}
+    ./configure --prefix=${BASEPREFIX}/${i} --bindir=${INSTALLPATH}/bin --includedir=${INSTALLPATH}/include --libdir=${INSTALLPATH}/lib --disable-ccache --disable-maintainer-mode --disable-dependency-tracking ${CONFIGFLAGS}
     make ${MAKEOPTS}
-    make deploy
     make install-strip
-    cp -f mintcoin-*setup*.exe $OUTDIR/
+
+    make osx_volname
+    make deploydir
+    OSX_VOLNAME="$(cat osx_volname)"
+    mkdir -p unsigned-app-${i}
+    cp osx_volname unsigned-app-${i}/
+    cp contrib/macdeploy/detached-sig-apply.sh unsigned-app-${i}
+    cp contrib/macdeploy/detached-sig-create.sh unsigned-app-${i}
+    cp ${BASEPREFIX}/${i}/native/bin/dmg ${BASEPREFIX}/${i}/native/bin/genisoimage unsigned-app-${i}
+    cp ${BASEPREFIX}/${i}/native/bin/${i}-codesign_allocate unsigned-app-${i}/codesign_allocate
+    cp ${BASEPREFIX}/${i}/native/bin/${i}-pagestuff unsigned-app-${i}/pagestuff
+    mv dist unsigned-app-${i}
+    pushd unsigned-app-${i}
+    find . | sort | tar --no-recursion --mode='u+rw,go+r-w,a+X' --owner=0 --group=0 -c -T - | gzip -9n > ${OUTDIR}/${DISTNAME}-osx-unsigned.tar.gz
+    popd
+
+    make deploy
+    ${WRAP_DIR}/dmg dmg "${OSX_VOLNAME}.dmg" ${OUTDIR}/${DISTNAME}-osx-unsigned.dmg
+
     cd installed
     find . -name "lib*.la" -delete
     find . -name "lib*.a" -delete
     rm -rf ${DISTNAME}/lib/pkgconfig
-    find ${DISTNAME} -type f | sort | zip -X@ ${OUTDIR}/${DISTNAME}-${i}.zip
-    cd ../..
+    find ${DISTNAME} | sort | tar --no-recursion --mode='u+rw,go+r-w,a+X' --owner=0 --group=0 -c -T - | gzip -9n > ${OUTDIR}/${DISTNAME}-${i}.tar.gz
+    cd ../../
   done
-  cd $OUTDIR
-  rename 's/-setup\.exe$/-setup-unsigned.exe/' *-setup.exe
-  find . -name "*-setup-unsigned.exe" | sort | tar --no-recursion --mode='u+rw,go+r-w,a+X' --owner=0 --group=0 -c -T - | gzip -9n > ${OUTDIR}/${DISTNAME}-win-unsigned.tar.gz
-  mv ${OUTDIR}/${DISTNAME}-x86_64-*.zip ${OUTDIR}/${DISTNAME}-win64.zip
-  mv ${OUTDIR}/${DISTNAME}-i686-*.zip ${OUTDIR}/${DISTNAME}-win32.zip
+  mkdir -p $OUTDIR/src
+  mv $SOURCEDIST $OUTDIR/src
+  mv ${OUTDIR}/${DISTNAME}-x86_64-*.tar.gz ${OUTDIR}/${DISTNAME}-osx64.tar.gz
