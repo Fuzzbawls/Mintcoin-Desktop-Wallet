@@ -1,14 +1,13 @@
-// Copyright (c) 2013-2014 The Bitcoin Core developers
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2013-2015 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//
-// Unit tests for block.CheckBlock()
-//
-
-
-
-#include "main.h"
+#include "clientversion.h"
+#include "consensus/validation.h"
+#include "main.h" // For CheckBlock
+#include "primitives/block.h"
+#include "test/test_bitcoin.h"
+#include "utiltime.h"
 
 #include <cstdio>
 
@@ -17,7 +16,7 @@
 #include <boost/test/unit_test.hpp>
 
 
-BOOST_AUTO_TEST_SUITE(CheckBlock_tests)
+BOOST_FIXTURE_TEST_SUITE(CheckBlock_tests, BasicTestingSetup)
 
 bool read_block(const std::string& filename, CBlock& block)
 {
@@ -34,8 +33,8 @@ bool read_block(const std::string& filename, CBlock& block)
 
     fseek(fp, 8, SEEK_SET); // skip msgheader/size
 
-    CAutoFile filein = CAutoFile(fp, SER_DISK, CLIENT_VERSION);
-    if (!filein) return false;
+    CAutoFile filein(fp, SER_DISK, CLIENT_VERSION);
+    if (filein.IsNull()) return false;
 
     filein >> block;
 
